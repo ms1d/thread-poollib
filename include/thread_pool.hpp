@@ -76,6 +76,8 @@ class thread_pool<func> {
 		std::atomic<bool> stop = false;
 
 		void emplace_task_internal(std::atomic<bool> *is_ready, arg_Ts... args) {
+			if (is_ready != nullptr) *is_ready = false;
+
 			task_t<R, arg_Ts...> task {
 				std::tuple<arg_Ts...>(args...),
 				is_ready
