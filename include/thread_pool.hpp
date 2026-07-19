@@ -20,7 +20,7 @@ class thread_pool;
 // Simple, lightweight bounded thread pool.
 // To init, provide number of workers + function to run with arg_Ts input
 // Use try_emplace_task() to add a task. if it returns false, the task could not be added
-template<typename R, typename... arg_Ts, R(*func)(arg_Ts...)>
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
 class thread_pool<func> {
 	public:
 		thread_pool(const size_t worker_count) : worker_count(worker_count) {
