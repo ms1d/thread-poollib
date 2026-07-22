@@ -8,7 +8,6 @@
 #include <queue>
 #include <stdexcept>
 #include <thread>
-#include <tuple>
 #include <vector>
 #include "task_t.hpp"
 
@@ -17,6 +16,7 @@
 template<auto func>
 class thread_pool;
 
+// DEPRECATED - do NOT use
 // Simple, lightweight bounded thread pool.
 // To init, provide number of workers + function to run with arg_Ts input
 // Use try_emplace_task() to add a task. if it returns false, the task could not be added
@@ -63,7 +63,7 @@ class thread_pool<func> {
 
 	private:
 		std::condition_variable tasks_cv;
-		std::queue<task_t<R, arg_Ts...>> tasks;
+		std::queue<task_t<func>> tasks;
 		std::mutex tasks_mtx;
 
 		std::vector<std::thread> workers;
@@ -78,10 +78,7 @@ class thread_pool<func> {
 		void emplace_task_internal(std::atomic<bool> *is_ready, arg_Ts... args) {
 			if (is_ready != nullptr) *is_ready = false;
 
-			task_t<R, arg_Ts...> task {
-				std::tuple<arg_Ts...>(args...),
-				is_ready
-			};
+			task_t<func> task(is_ready, args...);
 
 			{
 				std::lock_guard<std::mutex> lock(tasks_mtx);
@@ -107,7 +104,7 @@ class thread_pool<func> {
 
 				lock.unlock();
 
-				t.execute(func);
+				t.execute();
 
 				busy_workers--;
 			}

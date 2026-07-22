@@ -7,35 +7,54 @@
 
 
 
+enum task_state {
+	empty = 0,
+	ready_for_work = 1,
+	ready_for_result = 2
+};
+
+
+
+template<auto func>
+struct task_t;
+
+
+
 // structs for tasks used in thread_pools
-template<typename R, typename... arg_Ts>
-struct task_t {
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)> requires (!std::is_void_v<R>)
+struct task_t<func> {
 	std::tuple<arg_Ts...> args;
-	std::atomic<bool> *is_ready;
+	std::atomic<task_state> state;
 	R result;
 
-	void execute(R(*func)(arg_Ts...)){
+	task_t() {
+		args = std::tuple<arg_Ts...>();
+		state = task_state::empty;
+	}
+
+	void execute() {
 		result = std::apply(func, args);
 
-		if (is_ready != nullptr) {	
-			is_ready->store(true);					
-			is_ready->notify_one();
-		}
+		state.store(task_state::ready_for_result, std::memory_order_release);					
+		state.notify_one();
 	}
 };
 
 
-template<typename... arg_Ts>
-struct task_t<void, arg_Ts...> {
+template<typename... arg_Ts, void (*func)(arg_Ts...)> 
+struct task_t<func> {
 	std::tuple<arg_Ts...> args;
-	std::atomic<bool> *is_ready;
+	std::atomic<task_state> state;
 
-	void execute(void(*func)(arg_Ts...)){	
+	task_t() {
+		args = std::tuple<arg_Ts...>();
+		state = task_state::empty;
+	}
+
+	void execute() {
 		std::apply(func, args);
 
-		if (is_ready != nullptr) {
-			is_ready->store(true);
-			is_ready->notify_one();
-		}
+		state.store(task_state::ready_for_result, std::memory_order_release);					
+		state.notify_one();
 	}
 };
