@@ -21,9 +21,11 @@ struct tp_task;
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
 requires(!std::is_void_v<R>)
 struct tp_task<func> {
-    R *result;          // Pointer to store the result of the task
+    R result;          // Var to store the result of the task
     std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
+
+	tp_task<func>(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
 };
 
 
@@ -32,6 +34,8 @@ template<typename... arg_Ts, void (*func)(arg_Ts...)>
 struct tp_task<func> {
     std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
+	
+	tp_task<func>(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
 };
 
 
@@ -82,7 +86,6 @@ public:
 	// Blocking method that submits a task to the thread pool, and waits if it is full.
 	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
-        if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
 
 		std::unique_lock<std::mutex> l(task_buffer_mutex);
 		task_buffer_cv.wait(l, [this] () {
@@ -102,7 +105,6 @@ public:
 
     // One-shot version of `submit()`. Returns false instead of waiting.
     bool try_submit(tp_task<func> *task) {
-        if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
 
         if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
 
