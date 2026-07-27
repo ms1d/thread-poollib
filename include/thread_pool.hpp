@@ -78,6 +78,27 @@ public:
             worker_buffer[i].join();
     }
 
+
+	bool submit(tp_task<func> *task) {
+        if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
+        if (task->is_result_ready == nullptr) return false;
+
+		std::unique_lock<std::mutex> l(task_buffer_mutex);
+		task_buffer_cv.wait(l, [this] () {
+			return stop || tail - head < task_buffer_len;
+		});
+
+		if (stop) return false;
+
+		task_buffer[tail % task_buffer_len] = task;
+		tail++;
+
+		l.unlock();
+		task_buffer_cv.notify_one();
+    
+        return true;
+	}
+
     // Attempts to submit a task to the thread pool. Returns success state.
     bool try_submit(tp_task<func> *task) {
         if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
@@ -88,12 +109,13 @@ public:
         {
             std::lock_guard<std::mutex> l(task_buffer_mutex);
 
-            if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
+            if (tail - head == task_buffer_len) return false;
 
             task_buffer[tail % task_buffer_len] = task;
             tail++;
-            task_buffer_cv.notify_one();
         }
+        
+		task_buffer_cv.notify_one();
 
         return true;
     }
