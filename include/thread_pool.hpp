@@ -22,7 +22,7 @@ template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
 requires(!std::is_void_v<R>)
 struct tp_task<func> {
     R *result;          // Pointer to store the result of the task
-    std::atomic<bool> *is_result_ready;  // Atomic boolean flag indicating if the result is ready
+    std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 };
 
@@ -30,7 +30,7 @@ struct tp_task<func> {
 // Specialization for tasks that return void.
 template<typename... arg_Ts, void (*func)(arg_Ts...)>
 struct tp_task<func> {
-    std::atomic<bool> *is_result_ready;  // Atomic boolean flag indicating if the result is ready
+    std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 };
 
@@ -83,7 +83,6 @@ public:
 	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
         if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
-        if (task->is_result_ready == nullptr) return false;
 
 		std::unique_lock<std::mutex> l(task_buffer_mutex);
 		task_buffer_cv.wait(l, [this] () {
@@ -104,7 +103,6 @@ public:
     // One-shot version of `submit()`. Returns false instead of waiting.
     bool try_submit(tp_task<func> *task) {
         if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
-        if (task->is_result_ready == nullptr) return false;
 
         if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
 
@@ -139,8 +137,8 @@ public:
         if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
         else std::apply(func, task->args);
 
-        task->is_result_ready->store(true);
-        task->is_result_ready->notify_one();
+        task->is_result_ready.store(true);
+        task->is_result_ready.notify_one();
 
         return true;
     }
@@ -161,8 +159,8 @@ public:
         if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
         else std::apply(func, task->args);
 
-        task->is_result_ready->store(true);
-        task->is_result_ready->notify_one();
+        task->is_result_ready.store(true);
+        task->is_result_ready.notify_one();
 
         return true;
     }
