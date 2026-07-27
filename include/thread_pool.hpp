@@ -115,7 +115,6 @@ public:
 
             task_buffer[tail % task_buffer_len] = task;
             tail++;
-			printf("Added task of address %p\n", (void*)task);
         }
         
 		task_buffer_cv.notify_one();
