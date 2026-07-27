@@ -12,6 +12,7 @@
 #define MAX_WORKERS 16
 #define MAX_TASKS 1024
 
+
 // Template struct representing a task.
 template<auto func>
 struct tp_task;
@@ -25,12 +26,14 @@ struct tp_task<func> {
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 };
 
+
 // Specialization for tasks that return void.
 template<typename... arg_Ts, void (*func)(arg_Ts...)>
 struct tp_task<func> {
     std::atomic<bool> *is_result_ready;  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 };
+
 
 // Enumerates different types of thread pool buffers.
 enum pool_type {
@@ -39,6 +42,7 @@ enum pool_type {
     reserving_vyukov_buffer = 2, // Similar to above but with less busy waiting and more aggressive reserving
     work_stealing_buffer = 3   // Typical decentralized work-stealing approach
 };
+
 
 // MPMC thread pool with constexpr sizes for worker and task buffers.
 // Offers 4 different pool types (see pool_type enum) all with identical APIs.
@@ -139,6 +143,7 @@ public:
         return true;
     }
 
+
 private:
     std::mutex task_buffer_mutex;  // Mutex to protect the task buffer
     std::condition_variable task_buffer_cv;  // Condition variable for task availability
@@ -148,10 +153,12 @@ private:
     std::atomic<uint32_t> head, tail;  // Atomic indices for managing the task buffer
     std::atomic<bool> stop;  // Flag to initiate shutdown of workers
 
+
     void worker_loop() {
         while (claim());
     }
 };
+
 
 // NOT IMPLEMENTED
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
