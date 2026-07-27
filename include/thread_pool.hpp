@@ -25,7 +25,7 @@ struct tp_task<func> {
     std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 
-	tp_task<func>(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
+	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
 };
 
 
@@ -35,7 +35,7 @@ struct tp_task<func> {
     std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 	
-	tp_task<func>(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
+	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
 };
 
 
