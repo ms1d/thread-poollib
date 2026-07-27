@@ -79,6 +79,8 @@ public:
     }
 
 
+	// Blocking method that submits a task to the thread pool, and waits if it is full.
+	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
         if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
         if (task->is_result_ready == nullptr) return false;
@@ -99,7 +101,7 @@ public:
         return true;
 	}
 
-    // Attempts to submit a task to the thread pool. Returns success state.
+    // One-shot version of `submit()`. Returns false instead of waiting.
     bool try_submit(tp_task<func> *task) {
         if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
         if (task->is_result_ready == nullptr) return false;
@@ -113,6 +115,7 @@ public:
 
             task_buffer[tail % task_buffer_len] = task;
             tail++;
+			printf("Added task of address %p\n", (void*)task);
         }
         
 		task_buffer_cv.notify_one();
@@ -143,7 +146,7 @@ public:
         return true;
     }
 
-    // One-shot version of the above.
+    // One-shot version of `claim()`. Returns false instead of waiting.
     bool try_claim() {
         tp_task<func> *task = nullptr;
 
