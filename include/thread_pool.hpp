@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -9,187 +7,151 @@
 #include <cstdint>
 #include <type_traits>
 #include <tuple>
-#include <tuple>
 #include <cassert>
 
 #define MAX_WORKERS 16
 #define MAX_TASKS 1024
 
-
-
+// Template struct representing a task.
 template<auto func>
 struct tp_task;
 
-
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)> requires(!std::is_void_v<R>)
+// Specialization for tasks that return a value.
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
+requires(!std::is_void_v<R>)
 struct tp_task<func> {
-	R *result;
-	std::atomic<bool> *is_result_ready;
-	std::tuple<arg_Ts...> args;
+    R *result;          // Pointer to store the result of the task
+    std::atomic<bool> *is_result_ready;  // Atomic boolean flag indicating if the result is ready
+    std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 };
 
-
-// Special case when tasks return void
+// Specialization for tasks that return void.
 template<typename... arg_Ts, void (*func)(arg_Ts...)>
 struct tp_task<func> {
-	std::atomic<bool> *is_result_ready;
-	std::tuple<arg_Ts...> args;
+    std::atomic<bool> *is_result_ready;  // Atomic boolean flag indicating if the result is ready
+    std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
 };
 
-
-
+// Enumerates different types of thread pool buffers.
 enum pool_type {
-	mutex_protected_buffer = 0, // 1 mutex protects the whole buffer
-	vyukov_style_buffer = 1, // vyokov-styled 2 pointer + sequence number approach, lock free
-	reserving_vyukov_buffer = 2, // similar to above, but with less busy waiting and more aggressive reserving
-	work_stealing_buffer = 3 // typical decentralised work stealing approach
+    mutex_protected_buffer = 0,  // Single mutex protects the entire buffer
+    vyukov_style_buffer = 1,     // Vyukov-style two-pointer + sequence number approach, lock-free
+    reserving_vyukov_buffer = 2, // Similar to above but with less busy waiting and more aggressive reserving
+    work_stealing_buffer = 3   // Typical decentralized work-stealing approach
 };
 
-
-
-// MPMC thread pool with constexpr sizes for worker and task buffers
-// Offers 4 different pool types (see pool_type enum) all with identical APIs
-// Default pool type is mutex_protected_buffer
+// MPMC thread pool with constexpr sizes for worker and task buffers.
+// Offers 4 different pool types (see pool_type enum) all with identical APIs.
+// Default pool type is mutex_protected_buffer.
 template<auto func, uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex_protected_buffer>
 class thread_pool;
 
-
-// Mutex protected buffer implementation of thread pool
-//	- 1 mutex protects the whole buffer; consumers and producers cannot work at the same time
-//	- Usually worse throughput due to this, but do benchmark in your applications
+// Mutex-protected buffer implementation of thread pool.
+// - 1 mutex protects the whole buffer; consumers and producers cannot work at the same time
+// - Usually worse throughput due to this, but do benchmark in your applications
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
 class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::mutex_protected_buffer> {
 
+    static_assert(worker_buffer_len <= MAX_WORKERS, "Max worker buffer size breached (see constant MAX_WORKERS)");
+    static_assert(task_buffer_len <= MAX_TASKS, "Max task buffer size breached (see constant MAX_TASKS)");
+    static_assert(worker_buffer_len <= task_buffer_len, "Why have more workers than tasks?");
 
+public:
+    // Constructor initializes the thread pool with worker threads.
+    thread_pool() {
+        for (uint32_t i = 0; i < worker_buffer_len; i++)
+            worker_buffer[i] = std::thread([this] () {
+                worker_loop();
+            });
+    }
 
-	static_assert(worker_buffer_len <= MAX_WORKERS, "Max worker buffer size breached (see constant MAX_WORKERS)");
-	static_assert(task_buffer_len <= MAX_TASKS, "Max task buffer size breached (see constant MAX_TASKS)");
-	static_assert(worker_buffer_len <= task_buffer_len, "Why have more workers than tasks?");
+    // Destructor stops all worker threads and joins them.
+    ~thread_pool() {
+        stop = true;
+        task_buffer_cv.notify_all();
 
-
-
-	public:
-
-	thread_pool() {
-		for (uint32_t i = 0; i < worker_buffer_len; i++)
-			worker_buffer[i] = std::thread([this] () {
-				worker_loop();
-			});
-	}
-
-	~thread_pool() {
-		stop = true;
-		task_buffer_cv.notify_all();
-
-		for (uint32_t i = 0; i < worker_buffer_len; i++)
+        for (uint32_t i = 0; i < worker_buffer_len; i++)
             worker_buffer[i].join();
-	}
+    }
 
+    // Attempts to submit a task to the thread pool. Returns success state.
+    bool try_submit(tp_task<func> *task) {
+        if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
+        if (task->is_result_ready == nullptr) return false;
 
-	// Attempts to emplace a task in the task buffer. Returns success state (queued or not)
-	// Requires:
-	//	- R* to store results to (unless void)
-	//	- std::atomic<bool>* to notify clients when results are ready
-	//	- arg_Ts... args
-	// all bundled in a tp_task object (see tp_task.hpp)
-	// This object MUST persist during task completion. Callers are responsible for NOT losing it
-	bool try_submit(tp_task<func> *task) {
-		// basic input sanitisation
-		if constexpr (!std::is_void_v<R>) if (task->result == nullptr) return false;
-		
-		if (task->is_result_ready == nullptr) return false;
+        if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
 
-		if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
+        {
+            std::lock_guard<std::mutex> l(task_buffer_mutex);
 
-		{
-			std::lock_guard<std::mutex> l(task_buffer_mutex);
+            if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
 
-			// This thread may have been pre empted before the lock has been created, so check again and return if necessary
-			if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
+            task_buffer[tail % task_buffer_len] = task;
+            tail++;
+            task_buffer_cv.notify_one();
+        }
 
-			// Now this thread has control over tail
-			task_buffer[tail % task_buffer_len] = task;
+        return true;
+    }
 
-			// Increment tail
-			tail++;
+    // Claims a task from the thread pool and executes it.
+    bool claim() {
+        tp_task<func> *task = nullptr;
+        std::unique_lock<std::mutex> l(task_buffer_mutex);
+        task_buffer_cv.wait(l, [this] () {
+            return stop || tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) != 0;
+        });
 
-			task_buffer_cv.notify_one();
-		}
+        if (stop) return false;
 
-		return true;
-	}
+        task = task_buffer[head % task_buffer_len];
+        head++;
+        l.unlock();
 
-	// Returns whether a task has been completed or not
-	// Useful for producers to help out if waiting for results
-	bool claim() {
-		tp_task<func> *task = nullptr;
-		std::unique_lock<std::mutex> l(task_buffer_mutex);
-		task_buffer_cv.wait(l, [this] () {
-			return stop || tail.load() - head.load() != 0;
-		});
+        if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
+        else std::apply(func, task->args);
 
-		if (stop) return false;
+        task->is_result_ready->store(true);
+        task->is_result_ready->notify_one();
 
-		// Worker now reserves queue at head
-		task = task_buffer[head % task_buffer_len];
-		head++;
-		l.unlock();
+        return true;
+    }
 
-		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-		else std::apply(func, task->args);
+    // One-shot version of the above.
+    bool try_claim() {
+        tp_task<func> *task = nullptr;
 
-		task->is_result_ready->store(true);
-		task->is_result_ready->notify_one();
+        {
+            std::lock_guard<std::mutex> l(task_buffer_mutex);
 
-		return true;
-	}
+            if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == 0) return false;
 
-	// One-shot version of the above
-	bool try_claim() {
-		tp_task<func> *task = nullptr;
+            task = task_buffer[head % task_buffer_len];
+            head++;
+        }
 
-		{
-			std::lock_guard<std::mutex> l(task_buffer_mutex);
+        if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
+        else std::apply(func, task->args);
 
-			if (tail - head == 0) return false;
+        task->is_result_ready->store(true);
+        task->is_result_ready->notify_one();
 
-			// Worker now reserves queue at head
-			task = task_buffer[head % task_buffer_len];
-			head++;
-		}
+        return true;
+    }
 
-		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-		else std::apply(func, task->args);
+private:
+    std::mutex task_buffer_mutex;  // Mutex to protect the task buffer
+    std::condition_variable task_buffer_cv;  // Condition variable for task availability
+    tp_task<func> *task_buffer[task_buffer_len];  // Array of task pointers
+    std::thread worker_buffer[worker_buffer_len];  // Array of worker threads
 
-		task->is_result_ready->store(true);
-		task->is_result_ready->notify_one();
+    std::atomic<uint32_t> head, tail;  // Atomic indices for managing the task buffer
+    std::atomic<bool> stop;  // Flag to initiate shutdown of workers
 
-		return true;
-	}
-
-
-
-	private:
-
-	std::mutex task_buffer_mutex;
-	std::condition_variable task_buffer_cv;
-	tp_task<func> *task_buffer[task_buffer_len];
-	std::thread worker_buffer[worker_buffer_len];
-
-	// Head is the next index to be consumed, tail is the next index to be produced in
-	std::atomic<uint32_t> head, tail;
-
-	std::atomic<bool> stop; // Flag that initiates shutdown of workers
-
-	void worker_loop() {
-		while (claim());
-	}
-
-
-
+    void worker_loop() {
+        while (claim());
+    }
 };
-
-
 
 // NOT IMPLEMENTED
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
