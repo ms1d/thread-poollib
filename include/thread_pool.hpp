@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <tuple>
 #include <cassert>
+#include <cstdio>
 
 #define MAX_WORKERS 16
 #define MAX_TASKS 1024
@@ -238,8 +239,10 @@ public:
 
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
-		if ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission)
+		while ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission) {
+			printf("FAILED to get free slot. state was %d and needed %d\n", state_local, slot_state::ready_for_submission);
 			s->state.wait(state_local, std::memory_order_acquire);
+		}
 
 		// state should now be slot_state::ready_for_submission
 		s->state.store(slot_state::not_ready_for_consumption, std::memory_order_release);
@@ -274,8 +277,8 @@ public:
 			slot *s = &task_buffer[head_local % task_buffer_len];
 			slot_state state_local;
 
-			if ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
-                s->state.wait(state_local, std::memory_order_acquire);
+			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
+                s->state.wait(state_local);
 
 			s->state.store(slot_state::not_ready_for_submission, std::memory_order_release);
 			task = s->task;
@@ -307,8 +310,8 @@ public:
 		slot *s = &task_buffer[head_local % task_buffer_len];
 		slot_state state_local;
 
-		if ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
-			s->state.wait(state_local, std::memory_order_acquire);
+		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
+			s->state.wait(state_local);
 
 		s->state.store(slot_state::not_ready_for_submission, std::memory_order_release);
 		tp_task<func> *task = s->task;
