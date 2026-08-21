@@ -237,6 +237,7 @@ public:
 
 		if (tail_local - head_local == task_buffer_len) return false;
 
+		tail.notify_one();
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
 		while ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission) {
@@ -274,6 +275,8 @@ public:
 				tail.wait(tail_local, std::memory_order_relaxed); continue;
 			}
 
+			head.notify_one();
+
 			slot *s = &task_buffer[head_local % task_buffer_len];
 			slot_state state_local;
 
@@ -306,6 +309,8 @@ public:
         }
 
 		if (tail_local == head_local) return false;
+
+		head.notify_one();
 
 		slot *s = &task_buffer[head_local % task_buffer_len];
 		slot_state state_local;
