@@ -8,7 +8,6 @@
 #include <type_traits>
 #include <tuple>
 #include <cassert>
-#include <cstdio>
 
 #define MAX_WORKERS 16
 #define MAX_TASKS 1024
@@ -297,7 +296,7 @@ public:
 		auto head_local = head.load(std::memory_order_relaxed),
              tail_local = tail.load(std::memory_order_relaxed);
 
-		while (head_local == tail_local
+		while (head_local != tail_local
 				&& !head.compare_exchange_weak(head_local, head_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
             tail_local = tail.load(std::memory_order_relaxed);
         }
