@@ -234,13 +234,12 @@ public:
 		auto head_local = head.load(std::memory_order_relaxed),
 			 tail_local = tail.load(std::memory_order_relaxed);
 
-		while (tail_local - head_local != task_buffer_len &&
+		while (tail_local - head_local < task_buffer_len &&
 				!tail.compare_exchange_weak(tail_local, tail_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
 			head_local = head.load(std::memory_order_relaxed);
-			if (tail_local - head_local == task_buffer_len) return false;
 		}
 
-		if (tail_local - head_local == task_buffer_len) return false;
+		if (tail_local - head_local >= task_buffer_len) return false;
 
 		tail.notify_one();
 		slot *s = &task_buffer[tail_local % task_buffer_len];
