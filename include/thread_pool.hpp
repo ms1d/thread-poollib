@@ -235,17 +235,17 @@ public:
 			if (tail_local - head_local == task_buffer_len) return false;
 		}
 
-		slot *slot = task_buffer[tail_local % task_buffer_len];
+		slot *s = task_buffer[tail_local % task_buffer_len];
 		bool state_local;
-		while ((state_local = slot->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission)
-			slot->state.wait(state_local, std::memory_order_acquire);
+		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission)
+			s->state.wait(state_local, std::memory_order_acquire);
 
 		// state should now be slot_state::ready_for_submission
-		slot->state.store(slot_state::not_ready_for_consumption, std::memory_order_release);
-		slot->task = task;
-		slot->state = slot_state::ready_for_consumption;
-		slot->state.store(slot_state::ready_for_consumption, std::memory_order_release);
-		slot->state.notify_one();
+		s->state.store(slot_state::not_ready_for_consumption, std::memory_order_release);
+		s->task = task;
+		s->state = slot_state::ready_for_consumption;
+		s->state.store(slot_state::ready_for_consumption, std::memory_order_release);
+		s->state.notify_one();
 
 		return true;
 	}
@@ -269,18 +269,18 @@ public:
 				tail.wait(tail_local, std::memory_order_relaxed); continue;
 			}
 
-			slot *slot = task_buffer[head_local % task_buffer_len];
+			slot *s = task_buffer[head_local % task_buffer_len];
 			bool state_local;
 
-			while ((state_local = slot->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
-                slot->state.wait(state_local, std::memory_order_acquire);
+			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
+                s->state.wait(state_local, std::memory_order_acquire);
 
-			slot->state.store(slot_state::not_ready_for_submission, std::memory_order_release);
-			task = slot->task;
-			slot->state.store(slot_state::ready_for_submission, std::memory_order_release);
-			slot->state.notify_one();
+			s->state.store(slot_state::not_ready_for_submission, std::memory_order_release);
+			task = s->task;
+			s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+			s->state.notify_one();
 
-			if constexpr (!std::is_void_v<R>()) task->result = std::apply(func, task->args);
+			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
 
 			task->is_result_ready.store(true);
