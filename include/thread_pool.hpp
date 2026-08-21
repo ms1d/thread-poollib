@@ -236,7 +236,7 @@ public:
 		}
 
 		slot *s = task_buffer[tail_local % task_buffer_len];
-		bool state_local;
+		slot_state state_local;
 		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission)
 			s->state.wait(state_local, std::memory_order_acquire);
 
@@ -270,7 +270,7 @@ public:
 			}
 
 			slot *s = task_buffer[head_local % task_buffer_len];
-			bool state_local;
+			slot_state state_local;
 
 			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
                 s->state.wait(state_local, std::memory_order_acquire);
