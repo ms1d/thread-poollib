@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <cstdio>
 #include <mutex>
 #include <thread>
 #include <cstdint>
@@ -228,19 +227,18 @@ public:
 		auto head_local = head.load(std::memory_order_relaxed),
 			 tail_local = tail.load(std::memory_order_relaxed);
 
-		if (tail_local - head_local == task_buffer_len) return false;
-
-		while (!tail.compare_exchange_weak(tail_local, tail_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+		while (tail_local - head_local != task_buffer_len &&
+				!tail.compare_exchange_weak(tail_local, tail_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
 			head_local = head.load(std::memory_order_relaxed);
 			if (tail_local - head_local == task_buffer_len) return false;
 		}
 
+		if (tail_local - head_local == task_buffer_len) return false;
+
 		slot *s = &task_buffer[tail_local % task_buffer_len];
-		slot_state state_local;
-		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission) {
-			printf("Expected = %d, got = %d\n", slot_state::ready_for_submission, state_local);
+		slot_state state_local = s->state.load(std::memory_order_acquire);
+		if (state_local != slot_state::ready_for_submission)
 			s->state.wait(state_local, std::memory_order_acquire);
-		}
 
 		// state should now be slot_state::ready_for_submission
 		s->state.store(slot_state::not_ready_for_consumption, std::memory_order_release);
