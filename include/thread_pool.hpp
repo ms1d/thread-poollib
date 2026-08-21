@@ -216,8 +216,9 @@ public:
 		if (stop.load(std::memory_order_relaxed)) return false;
 		auto head_local = head.load(std::memory_order_relaxed),
 			 tail_local = tail.load(std::memory_order_relaxed);
-		
-		//...
+	
+		return false;
+		// to be done later
 	}
 	
     // One-shot version of `submit()`. Returns false instead of waiting if pool is full.
@@ -254,9 +255,10 @@ public:
     // Claims a task from the thread pool and executes it.
 	bool claim() {
 		tp_task<func> *task = nullptr;
-		if (stop.load(std::memory_order_relaxed)) return false;
 
 		for (;;) {
+			if (stop.load(std::memory_order_relaxed)) return false;
+			
 			auto head_local = head.load(std::memory_order_relaxed),
 				 tail_local = tail.load(std::memory_order_relaxed);
 
@@ -318,6 +320,8 @@ public:
 
 		task->is_result_ready.store(true);
 		task->is_result_ready.notify_one();
+
+		return true;
 	}
 
 private:
