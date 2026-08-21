@@ -240,11 +240,12 @@ public:
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
 		while ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission) {
-			// spin
+			s->state.wait(state_local, std::memory_order_relaxed);
 		}
 
 		s->task = task;
 		s->state.store(slot_state::ready_for_consumption, std::memory_order_release);
+		s->state.notify_one();
 
 		return true;
 	}
@@ -275,11 +276,12 @@ public:
 			slot_state state_local;
 
 			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption) {
-				// spin
+				s->state.wait(state_local, std::memory_order_relaxed);
 			}
 
 			task = s->task;
 			s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+			s->state.notify_one();
 
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
@@ -309,11 +311,12 @@ public:
 		slot_state state_local;
 
 		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption) {
-			// spin
+			s->state.wait(state_local, std::memory_order_relaxed);
 		}
 
 		tp_task<func> *task = s->task;
 		s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+		s->state.notify_one();
 
 		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 		else std::apply(func, task->args);
