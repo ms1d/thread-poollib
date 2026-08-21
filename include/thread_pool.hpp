@@ -2,7 +2,7 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <future>
+#include <cstdio>
 #include <mutex>
 #include <thread>
 #include <cstdint>
@@ -237,8 +237,10 @@ public:
 
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
-		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission)
+		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission) {
+			printf("Expected = %d, got = %d\n", slot_state::ready_for_submission, state_local);
 			s->state.wait(state_local, std::memory_order_acquire);
+		}
 
 		// state should now be slot_state::ready_for_submission
 		s->state.store(slot_state::not_ready_for_consumption, std::memory_order_release);
@@ -305,6 +307,10 @@ private:
 	struct slot {
 		tp_task<func> *task;
 		std::atomic<slot_state> state;
+
+		slot() {
+			task = nullptr; state = slot_state::ready_for_submission;
+		}
 	};
 
 	slot task_buffer[task_buffer_len];
