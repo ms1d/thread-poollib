@@ -210,6 +210,7 @@ public:
 
 	~thread_pool() {
 		stop.store(true, std::memory_order_relaxed);
+		stop.notify_all();
 
 		for (int i = 0; i < worker_buffer_len; i++)
             worker_buffer[i].join();
