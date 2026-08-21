@@ -235,7 +235,7 @@ public:
 			if (tail_local - head_local == task_buffer_len) return false;
 		}
 
-		slot *s = task_buffer[tail_local % task_buffer_len];
+		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
 		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_submission)
 			s->state.wait(state_local, std::memory_order_acquire);
@@ -269,7 +269,7 @@ public:
 				tail.wait(tail_local, std::memory_order_relaxed); continue;
 			}
 
-			slot *s = task_buffer[head_local % task_buffer_len];
+			slot *s = &task_buffer[head_local % task_buffer_len];
 			slot_state state_local;
 
 			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
@@ -307,7 +307,7 @@ private:
 		std::atomic<slot_state> state;
 	};
 
-	slot *task_buffer[task_buffer_len];
+	slot task_buffer[task_buffer_len];
 	std::thread worker_buffer[worker_buffer_len];
 
 	std::atomic<uint32_t> head, tail;
