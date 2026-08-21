@@ -272,7 +272,7 @@ public:
 			slot *s = &task_buffer[head_local % task_buffer_len];
 			slot_state state_local;
 
-			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
+			if ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
                 s->state.wait(state_local, std::memory_order_acquire);
 
 			s->state.store(slot_state::not_ready_for_submission, std::memory_order_release);
@@ -292,6 +292,32 @@ public:
 	bool try_claim() {
 		if (stop.load(std::memory_order_relaxed)) return false;
 
+		auto head_local = head.load(std::memory_order_relaxed),
+             tail_local = tail.load(std::memory_order_relaxed);
+
+		while (head_local == tail_local
+				&& !head.compare_exchange_weak(head_local, head_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+            tail_local = tail.load(std::memory_order_relaxed);
+        }
+
+		if (tail_local == head_local) return false;
+
+		slot *s = &task_buffer[head_local % task_buffer_len];
+		slot_state state_local;
+
+		if ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption)
+			s->state.wait(state_local, std::memory_order_acquire);
+
+		s->state.store(slot_state::not_ready_for_submission, std::memory_order_release);
+		tp_task<func> *task = s->task;
+		s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+		s->state.notify_one();
+
+		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
+		else std::apply(func, task->args);
+
+		task->is_result_ready.store(true);
+		task->is_result_ready.notify_one();
 	}
 
 private:
