@@ -44,10 +44,11 @@ struct tp_task<func> {
 // Enumerates different types of thread pool buffers.
 enum pool_type {
     mutex_protected_buffer = 0,		// Single mutex protects the entire buffer
-	slot_state_buffer = 1,			// Lock free. Each slot has one of 4 states
-    vyukov_style_buffer = 2,		// Vyukov-style two-pointer + sequence number approach, lock-free
-    reserving_vyukov_buffer = 3,	// Similar to above but with less busy waiting and more aggressive reserving
-    work_stealing_buffer = 4		// Typical decentralized work-stealing approach
+	slot_state_buffer_spin = 1,		// Lock free. Each slot has one of 2 states. Threads spin
+	slot_state_buffer_idle = 2,		// Lock free. Each slot has one of 2 states. Threads idle
+    vyukov_style_buffer = 3,		// Vyukov-style two-pointer + sequence number approach, lock-free
+    reserving_vyukov_buffer = 4,	// Similar to above but with less busy waiting and more aggressive reserving
+    work_stealing_buffer = 5		// Typical decentralized work-stealing approach
 };
 
 
@@ -59,7 +60,7 @@ class thread_pool;
 
 // Mutex-protected buffer implementation of thread pool.
 // - 1 mutex protects the whole buffer; consumers and producers cannot work at the same time
-// - Usually worse throughput due to this, but do benchmark in your applications
+// - Usually worse throughput, but do benchmark in your applications
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
 class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::mutex_protected_buffer> {
 
@@ -191,9 +192,13 @@ private:
 };
 
 
-// NOT IMPLEMENTED
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::slot_state_buffer> {
+// Lock free implementation of thread pool via slot state
+//	- Each slot has one of 2 states: ready_for_submission or ready_for_consumption
+//	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
+//	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
+requires(type == pool_type::slot_state_buffer_spin || type == pool_type::slot_state_buffer_idle)
+class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 public:
 	
 	thread_pool() {
@@ -240,12 +245,12 @@ public:
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
 		while ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission) {
-			s->state.wait(state_local, std::memory_order_relaxed);
+			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.wait(state_local, std::memory_order_relaxed);
 		}
 
 		s->task = task;
 		s->state.store(slot_state::ready_for_consumption, std::memory_order_release);
-		s->state.notify_one();
+		if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
 
 		return true;
 	}
@@ -276,12 +281,12 @@ public:
 			slot_state state_local;
 
 			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption) {
-				s->state.wait(state_local, std::memory_order_relaxed);
+				if constexpr (type == pool_type::slot_state_buffer_idle) s->state.wait(state_local, std::memory_order_relaxed);
 			}
 
 			task = s->task;
 			s->state.store(slot_state::ready_for_submission, std::memory_order_release);
-			s->state.notify_one();
+			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
 
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
