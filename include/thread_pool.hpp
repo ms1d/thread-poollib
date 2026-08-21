@@ -241,7 +241,6 @@ public:
 
 		if (tail_local - head_local >= task_buffer_len) return false;
 
-		tail.notify_one();
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		slot_state state_local;
 		while ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission) {
@@ -250,6 +249,7 @@ public:
 
 		s->task = task;
 		s->state.store(slot_state::ready_for_consumption, std::memory_order_release);
+		tail.notify_one();
 		if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
 
 		return true;
@@ -275,7 +275,6 @@ public:
 				tail.wait(tail_local, std::memory_order_relaxed); continue;
 			}
 
-			head.notify_one();
 
 			slot *s = &task_buffer[head_local % task_buffer_len];
 			slot_state state_local;
@@ -286,6 +285,7 @@ public:
 
 			task = s->task;
 			s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+			head.notify_one();
 			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
 
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
@@ -310,18 +310,18 @@ public:
 
 		if (tail_local == head_local) return false;
 
-		head.notify_one();
 
 		slot *s = &task_buffer[head_local % task_buffer_len];
 		slot_state state_local;
 
 		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption) {
-			s->state.wait(state_local, std::memory_order_relaxed);
+			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.wait(state_local, std::memory_order_relaxed);
 		}
 
 		tp_task<func> *task = s->task;
 		s->state.store(slot_state::ready_for_submission, std::memory_order_release);
-		s->state.notify_one();
+		head.notify_one();
+		if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
 
 		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 		else std::apply(func, task->args);
