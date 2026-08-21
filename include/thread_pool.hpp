@@ -236,8 +236,8 @@ public:
 		if (tail_local - head_local == task_buffer_len) return false;
 
 		slot *s = &task_buffer[tail_local % task_buffer_len];
-		slot_state state_local = s->state.load(std::memory_order_acquire);
-		if (state_local != slot_state::ready_for_submission)
+		slot_state state_local;
+		if ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission)
 			s->state.wait(state_local, std::memory_order_acquire);
 
 		// state should now be slot_state::ready_for_submission
