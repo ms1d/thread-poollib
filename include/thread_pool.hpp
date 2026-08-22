@@ -297,7 +297,7 @@ public:
 			}
 
 			tp_task<func> *task = s->task;
-			s->seq_num.store(seq_num_local + task_buffer_len, std::memory_order_release);
+			s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
 			head.notify_one();
 			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
@@ -337,7 +337,7 @@ public:
 		}
 
 		tp_task<func> *task = s->task;
-		s->seq_num.store(seq_num_local + task_buffer_len, std::memory_order_release);
+		s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
 		head.notify_one();
 		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
