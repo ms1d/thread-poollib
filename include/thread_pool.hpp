@@ -238,7 +238,7 @@ public:
 			s->task = task;
 			s->seq_num.store(tail_local + 1, std::memory_order_release);
 			tail.notify_one();
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
 
 			return true;
 		}
@@ -267,7 +267,7 @@ public:
 		s->task = task;
 		s->seq_num.store(tail_local + 1, std::memory_order_release);
 		tail.notify_one();
-		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
+		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
 
 		return true;
 	}
@@ -299,7 +299,7 @@ public:
 			tp_task<func> *task = s->task;
 			s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
 			head.notify_one();
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
 
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
@@ -339,7 +339,7 @@ public:
 		tp_task<func> *task = s->task;
 		s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
 		head.notify_one();
-		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
+		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
 
 		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 		else std::apply(func, task->args);
