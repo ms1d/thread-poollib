@@ -200,6 +200,9 @@ class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 public:
 	
 	thread_pool() {
+		for (int i = 0; i < task_buffer_len; i++) 
+			task_buffer[i].seq_num = i;
+
 		for (int i = 0; i < worker_buffer_len; i++)
 			worker_buffer[i] = std::thread([this] () {
                 worker_loop();
