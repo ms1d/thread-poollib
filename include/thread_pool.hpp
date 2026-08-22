@@ -9,9 +9,6 @@
 #include <tuple>
 #include <cassert>
 
-#define MAX_WORKERS 16
-#define MAX_TASKS 1024
-
 
 // Template struct representing a task.
 template<auto func>
@@ -62,9 +59,7 @@ class thread_pool;
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
 class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::mutex_protected_buffer> {
 
-    static_assert(worker_buffer_len <= MAX_WORKERS, "Max worker buffer size breached (see constant MAX_WORKERS)");
-    static_assert(task_buffer_len <= MAX_TASKS, "Max task buffer size breached (see constant MAX_TASKS)");
-    static_assert(worker_buffer_len <= task_buffer_len, "Why have more workers than tasks?");
+
 
 public:
     // Constructor initializes the thread pool with worker threads.
