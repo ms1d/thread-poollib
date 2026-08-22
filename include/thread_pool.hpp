@@ -191,7 +191,7 @@ private:
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
-//requires(type == pool_type::vyukov_buffer_spin || type == pool_type::vyukov_buffer_idle)
+requires(type == pool_type::vyukov_buffer_spin || type == pool_type::vyukov_buffer_idle)
 class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 public:
 	
