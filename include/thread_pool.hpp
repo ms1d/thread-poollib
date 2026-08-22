@@ -44,11 +44,9 @@ struct tp_task<func> {
 // Enumerates different types of thread pool buffers.
 enum pool_type {
     mutex_protected_buffer = 0,		// Single mutex protects the entire buffer
-	slot_state_buffer_spin = 1,		// Lock free. Each slot has one of 2 states. Threads spin
-	slot_state_buffer_idle = 2,		// Lock free. Each slot has one of 2 states. Threads idle
-    vyukov_style_buffer = 3,		// Vyukov-style two-pointer + sequence number approach, lock-free
-    reserving_vyukov_buffer = 4,	// Similar to above but with less busy waiting and more aggressive reserving
-    work_stealing_buffer = 5		// Typical decentralized work-stealing approach
+    vyukov_buffer_spin = 1,			// Vyukov-style two-pointer + sequence number approach, lock-free
+    vyukov_buffer_idle = 2,			// Similar to above but threads idle instead of spinning
+    work_stealing_buffer = 3		// Typical decentralized work-stealing approach
 };
 
 
@@ -197,7 +195,7 @@ private:
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
-requires(type == pool_type::slot_state_buffer_spin || type == pool_type::slot_state_buffer_idle)
+//requires(type == pool_type::vyukov_buffer_spin || type == pool_type::vyukov_buffer_idle)
 class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 public:
 	
@@ -242,15 +240,15 @@ public:
 		if (tail_local - head_local >= task_buffer_len) return false;
 
 		slot *s = &task_buffer[tail_local % task_buffer_len];
-		slot_state state_local;
-		while ((state_local = s->state.load(std::memory_order_acquire))  != slot_state::ready_for_submission) {
-			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.wait(state_local, std::memory_order_relaxed);
+		uint32_t seq_num_local;
+		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 		}
 
 		s->task = task;
-		s->state.store(slot_state::ready_for_consumption, std::memory_order_release);
+		s->seq_num.store(tail_local + 1, std::memory_order_release);
 		tail.notify_one();
-		if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
+		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 		return true;
 	}
@@ -277,16 +275,16 @@ public:
 
 
 			slot *s = &task_buffer[head_local % task_buffer_len];
-			slot_state state_local;
+			uint32_t seq_num_local;
 
-			while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption) {
-				if constexpr (type == pool_type::slot_state_buffer_idle) s->state.wait(state_local, std::memory_order_relaxed);
+			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire)) != head_local + 1) {
+				if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 			}
 
-			task = s->task;
-			s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+			tp_task<func> *task = s->task;
+			s->seq_num.store(seq_num_local + task_buffer_len, std::memory_order_release);
 			head.notify_one();
-			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
@@ -312,16 +310,16 @@ public:
 
 
 		slot *s = &task_buffer[head_local % task_buffer_len];
-		slot_state state_local;
+		uint32_t seq_num_local;
 
-		while ((state_local = s->state.load(std::memory_order_acquire)) != slot_state::ready_for_consumption) {
-			if constexpr (type == pool_type::slot_state_buffer_idle) s->state.wait(state_local, std::memory_order_relaxed);
+		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire)) != head_local + 1) {
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 		}
 
 		tp_task<func> *task = s->task;
-		s->state.store(slot_state::ready_for_submission, std::memory_order_release);
+		s->seq_num.store(seq_num_local + task_buffer_len, std::memory_order_release);
 		head.notify_one();
-		if constexpr (type == pool_type::slot_state_buffer_idle) s->state.notify_one();
+		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 		else std::apply(func, task->args);
@@ -333,18 +331,9 @@ public:
 	}
 
 private:
-	enum slot_state {
-		ready_for_submission = 1,
-		ready_for_consumption = 2,
-	};
-
 	struct slot {
-		tp_task<func> *task;
-		std::atomic<slot_state> state;
-
-		slot() {
-			task = nullptr; state = slot_state::ready_for_submission;
-		}
+		tp_task<func> *task = nullptr;
+		std::atomic<uint32_t> seq_num = 0;
 	};
 
 	slot task_buffer[task_buffer_len];
@@ -359,13 +348,6 @@ private:
 };
 
 
-// NOT IMPLEMENTED
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::vyukov_style_buffer>;
-
-// NOT IMPLEMENTED
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::reserving_vyukov_buffer>;
 
 // NOT IMPLEMENTED
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
