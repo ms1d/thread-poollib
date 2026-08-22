@@ -259,8 +259,6 @@ public:
     
     // Claims a task from the thread pool and executes it.
 	bool claim() {
-		tp_task<func> *task = nullptr;
-
 		for (;;) {
 			if (stop.load(std::memory_order_relaxed)) return false;
 			
