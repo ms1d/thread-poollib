@@ -195,7 +195,7 @@ private:
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
-requires(type == pool_type::vyukov_buffer_spin || type == pool_type::vyukov_buffer_idle)
+//requires(type == pool_type::vyukov_buffer_spin || type == pool_type::vyukov_buffer_idle)
 class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 public:
 	
@@ -220,11 +220,31 @@ public:
 	// Blocking method that submits a task to the thread pool, and waits if it is full.
 	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
-		if (stop.load(std::memory_order_relaxed)) return false;
-		auto head_local = head.load(std::memory_order_relaxed),
-			 tail_local = tail.load(std::memory_order_relaxed);
-	
-		return false;
+		for (;;) {
+			if (stop.load(std::memory_order_relaxed)) return false;
+			auto head_local = head.load(std::memory_order_relaxed),
+				 tail_local = tail.load(std::memory_order_relaxed);
+
+			while (tail_local - head_local < task_buffer_len &&
+					!tail.compare_exchange_weak(tail_local, tail_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+				head_local = head.load(std::memory_order_relaxed);
+			}
+
+			if (tail_local - head_local >= task_buffer_len) continue;
+
+			slot *s = &task_buffer[tail_local % task_buffer_len];
+			uint32_t seq_num_local;
+			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
+				if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
+			}
+
+			s->task = task;
+			s->seq_num.store(tail_local + 1, std::memory_order_release);
+			tail.notify_one();
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
+
+			return true;
+		}
 		// to be done later
 	}
 	
@@ -257,7 +277,7 @@ public:
 	}
 
     
-    // Claims a task from the thread pool and executes it.
+    // Claims a task from the thread pool and executes it, forever.
 	bool claim() {
 		for (;;) {
 			if (stop.load(std::memory_order_relaxed)) return false;
