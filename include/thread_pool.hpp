@@ -229,6 +229,8 @@ public:
 
 			if (tail_local - head_local >= task_buffer_len) continue;
 
+			tail.notify_one();
+			
 			slot *s = &task_buffer[tail_local % task_buffer_len];
 			uint32_t seq_num_local;
 			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
@@ -237,8 +239,7 @@ public:
 
 			s->task = task;
 			s->seq_num.store(tail_local + 1, std::memory_order_release);
-			tail.notify_one();
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 			return true;
 		}
@@ -258,6 +259,8 @@ public:
 
 		if (tail_local - head_local >= task_buffer_len) return false;
 
+		tail.notify_one();
+
 		slot *s = &task_buffer[tail_local % task_buffer_len];
 		uint32_t seq_num_local;
 		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
@@ -266,8 +269,7 @@ public:
 
 		s->task = task;
 		s->seq_num.store(tail_local + 1, std::memory_order_release);
-		tail.notify_one();
-		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
+		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 		return true;
 	}
@@ -288,6 +290,7 @@ public:
 				tail.wait(tail_local, std::memory_order_relaxed); continue;
 			}
 
+			head.notify_one();
 
 			slot *s = &task_buffer[head_local % task_buffer_len];
 			uint32_t seq_num_local;
@@ -298,8 +301,7 @@ public:
 
 			tp_task<func> *task = s->task;
 			s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
-			head.notify_one();
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
+			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
@@ -328,6 +330,7 @@ public:
 
 		if (tail_local == head_local) return false;
 
+		head.notify_one();
 
 		slot *s = &task_buffer[head_local % task_buffer_len];
 		uint32_t seq_num_local;
@@ -338,8 +341,7 @@ public:
 
 		tp_task<func> *task = s->task;
 		s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
-		head.notify_one();
-		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
+		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_one();
 
 		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 		else std::apply(func, task->args);
