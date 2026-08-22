@@ -172,7 +172,7 @@ private:
     tp_task<func> *task_buffer[task_buffer_len];  // Array of task pointers
     std::thread worker_buffer[worker_buffer_len];  // Array of worker threads
 
-    std::atomic<uint32_t> head, tail;  // Atomic indices for managing the task buffer
+    alignas(64) std::atomic<uint32_t> head, tail;  // Atomic indices for managing the task buffer
     std::atomic<bool> stop;  // Flag to initiate shutdown of workers
 
 
@@ -348,7 +348,7 @@ public:
 	}
 
 private:
-	struct slot {
+	struct alignas(64) slot {
 		tp_task<func> *task = nullptr;
 		std::atomic<uint32_t> seq_num = 0;
 	};
@@ -356,7 +356,7 @@ private:
 	slot task_buffer[task_buffer_len];
 	std::thread worker_buffer[worker_buffer_len];
 
-	std::atomic<uint32_t> head, tail;
+	alignas(64) std::atomic<uint32_t> head, tail;
 	std::atomic<bool> stop;
 
 	void worker_loop() {
