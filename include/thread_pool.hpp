@@ -88,14 +88,12 @@ public:
 	// Blocking method that submits a task to the thread pool, and waits if it is full.
 	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
-		if (stop.load(std::memory_order_relaxed)) return false;
-
 		std::unique_lock<std::mutex> l(task_buffer_mutex);
 		task_buffer_cv.wait(l, [this] () {
-			return stop || tail - head < task_buffer_len;
+			return tail - head < task_buffer_len || stop.load(std::memory_order_relaxed);
 		});
 
-		if (stop) return false;
+		if (stop.load(std::memory_order_relaxed)) return false;
 
 		task_buffer[tail % task_buffer_len] = task;
 		tail++;
@@ -108,13 +106,12 @@ public:
 
     // One-shot version of `submit()`. Returns false instead of waiting.
     bool try_submit(tp_task<func> *task) {
-		if (stop.load(std::memory_order_relaxed)) return false;
-        if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len) return false;
-
         {
             std::lock_guard<std::mutex> l(task_buffer_mutex);
 
-            if (tail - head == task_buffer_len) return false;
+			if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len
+					|| stop.load(std::memory_order_relaxed))
+				return false;
 
             task_buffer[tail % task_buffer_len] = task;
             tail++;
@@ -127,15 +124,12 @@ public:
 
     // Claims a task from the thread pool and executes it.
     bool claim() {
-        if (stop.load(std::memory_order_relaxed)) return false;
 		tp_task<func> *task = nullptr;
         
 		std::unique_lock<std::mutex> l(task_buffer_mutex);
         task_buffer_cv.wait(l, [this] () {
-            return stop || tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) != 0;
+            return stop || tail.load(std::memory_order_relaxed) != head.load(std::memory_order_relaxed);
         });
-
-        if (stop.load(std::memory_order_relaxed)) return false;
 
         task = task_buffer[head % task_buffer_len];
         head++;
@@ -144,8 +138,11 @@ public:
         if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
         else std::apply(func, task->args);
 
-        task->is_result_ready.store(true);
+        task->is_result_ready.store(true, std::memory_order_release);
         task->is_result_ready.notify_one();
+        
+		if (stop.load(std::memory_order_relaxed)
+				&& tail.load(std::memory_order_relaxed) == head.load(std::memory_order_relaxed)) return false;
 
         return true;
     }
@@ -167,7 +164,7 @@ public:
         if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
         else std::apply(func, task->args);
 
-        task->is_result_ready.store(true);
+        task->is_result_ready.store(true, std::memory_order_release);
         task->is_result_ready.notify_one();
 
         return true;
@@ -190,8 +187,7 @@ private:
 };
 
 
-// Lock free implementation of thread pool via slot state
-//	- Each slot has one of 2 states: ready_for_submission or ready_for_consumption
+// Lock free implementation of thread pool via Vyukov sequence numbers
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
@@ -222,6 +218,7 @@ public:
 	bool submit(tp_task<func> *task) {
 		for (;;) {
 			if (stop.load(std::memory_order_relaxed)) return false;
+
 			auto head_local = head.load(std::memory_order_relaxed),
 				 tail_local = tail.load(std::memory_order_relaxed);
 
@@ -245,7 +242,6 @@ public:
 
 			return true;
 		}
-		// to be done later
 	}
 	
     // One-shot version of `submit()`. Returns false instead of waiting if pool is full.
@@ -277,11 +273,9 @@ public:
 	}
 
     
-    // Claims a task from the thread pool and executes it, forever.
+    // Claims a task from the thread pool and executes it. Returns whether or not a task was completed
 	bool claim() {
-		for (;;) {
-			if (stop.load(std::memory_order_relaxed)) return false;
-			
+		for (;;) {	
 			auto head_local = head.load(std::memory_order_relaxed),
 				 tail_local = tail.load(std::memory_order_relaxed);
 
@@ -310,8 +304,13 @@ public:
 			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 			else std::apply(func, task->args);
 
-			task->is_result_ready.store(true);
+			task->is_result_ready.store(true, std::memory_order_release);
 			task->is_result_ready.notify_one();
+			
+			if (stop.load(std::memory_order_relaxed)
+					&& tail.load(std::memory_order_relaxed) == head.load(std::memory_order_relaxed)) return false;
+
+			return true;
 		}
 	}
     
@@ -345,7 +344,7 @@ public:
 		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 		else std::apply(func, task->args);
 
-		task->is_result_ready.store(true);
+		task->is_result_ready.store(true, std::memory_order_release);
 		task->is_result_ready.notify_one();
 
 		return true;
