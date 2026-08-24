@@ -7,16 +7,15 @@ out of your way when you need MPMC concurrency.
 
 - `mutex_protected_buffer` protects the buffer with a mutex
 
-- `vyukov_style_buffer` draws inspiration from Vyukov's design on 1024cores
+- `vyukov_buffer_spin` draws inspiration from Vyukov's design on 1024cores
 
-- `reserving_vyukov_buffer` is similar to the above but with some slight changes
-to make producers more aggressive when reserving slots to allow for efficient waiting
+- `vyukov_buffer_idle` where Vyukov spins, idle instead with std::atomic::wait()
 
 - `work_stealing_buffer` uses a completely distinct, decentralised
 paradigm when enqueueing tasks
 
 If you have better names for these types please do let me know.
-As of writing, only the first type has been implemented.
+As of writing, only the first 3 types have been implemented.
 
 ## Usage
 
