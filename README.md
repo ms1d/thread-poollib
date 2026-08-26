@@ -1,5 +1,15 @@
 # thread-poollib
 
+<!--toc:start-->
+- [thread-poollib](#thread-poollib)
+  - [Features](#features)
+  - [`pool_type`](#pool_type)
+  - [Architecture](#architecture)
+  - [Usage](#usage)
+  - [Benchmarks](#benchmarks)
+  - [Notes, Limitations & Quirks](#notes-limitations-quirks)
+<!--toc:end-->
+
 Lightweight templated MPMC thread pool header-only library designed to get
 out of your way when you need MPMC concurrency.
 
