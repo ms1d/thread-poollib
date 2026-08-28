@@ -222,7 +222,9 @@ public:
 				head_local = head.load(std::memory_order_relaxed);
 			}
 
-			if (tail_local - head_local >= task_buffer_len) continue;
+			if (tail_local - head_local >= task_buffer_len) {
+				head.wait(head_local, std::memory_order_relaxed); continue;
+			}
 
 			tail.notify_one();
 			
