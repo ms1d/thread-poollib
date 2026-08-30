@@ -202,7 +202,6 @@ public:
 
 	~thread_pool() {
 		stop.store(true, std::memory_order_relaxed);
-		stop.notify_all();
 
 		for (uint32_t i = 0; i < worker_buffer_len; i++)
             worker_buffer[i].join();
@@ -374,12 +373,29 @@ class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stea
 
 
 public:
+
+	thread_pool() {
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+			workers[i] = std::thread([this, i] () {
+				worker_loop<i>();
+			});
+		}
+	}
+
+	~thread_pool() {
+		stop = true;
+
+		for (uint32_t i = 0; i < worker_buffer_len; i++) workers[i].join();
+	}
+
 	bool try_submit(tp_task<func> *task) {
+		if (stop.load(std::memory_order_relaxed)) return false;
 		for (uint32_t i = 0; i < worker_buffer_len; i++) if (deques[i].push(task)) return true;
 		return false;
 	}
 
 	bool try_claim() {
+		if (stop.load(std::memory_order_relaxed)) return false;
 		tp_task<func> *task = nullptr;
 
 		for (uint32_t i = 0; i < worker_buffer_len; i++) {
@@ -443,6 +459,12 @@ private:
 
 			return task_buffer[bottom_local % task_buffer_len];
 		}
+
+		uint32_t size() {
+			auto top_local = top.load(std::memory_order_relaxed),
+				 bottom_local = bottom.load(std::memory_order_relaxed);
+			return top_local - bottom_local;
+		}
 	};
 
 	deque deques[worker_buffer_len];
@@ -452,6 +474,8 @@ private:
 	template<uint32_t worker_index>
 	void worker_loop() {
 		for (;;) {
+			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
+
 			if (auto task = deques[worker_index].pop()) {
 				if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
 				else std::apply(func, task->args);
