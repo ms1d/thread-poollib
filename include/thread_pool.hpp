@@ -184,25 +184,33 @@ public:
 	}
 
 	bool claim() {
-		if (auto task = induction_buffer.claim()) {
+		tp_task<func> *task = nullptr;
+		if (deque_ptr != nullptr) task = ((deque*)deque_ptr)->pop();
+		if (task == nullptr) task = induction_buffer.claim();
+
+		if (task != nullptr) {
             if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
             else std::apply(func, task->args);
             task->is_result_ready.store(true, std::memory_order_release);
             task->is_result_ready.notify_one();
             return true;
-        }
+		}
 
 		return false;
 	}
 
 	bool try_claim() {
-		if (auto task = induction_buffer.try_claim()) {
+		tp_task<func> *task = nullptr;
+		if (deque_ptr != nullptr) task = ((deque*)deque_ptr)->pop();
+		if (task == nullptr) task = induction_buffer.try_claim();
+
+		if (task != nullptr) {
             if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
             else std::apply(func, task->args);
             task->is_result_ready.store(true, std::memory_order_release);
             task->is_result_ready.notify_one();
             return true;
-        }
+		}
 
 		return false;
 	}
