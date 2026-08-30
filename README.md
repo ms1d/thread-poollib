@@ -11,7 +11,7 @@
 <!--toc:end-->
 
 Lightweight templated MPMC thread pool header-only library designed to improve performance
-in multi-threaded applications.
+in multi-threaded applications. Also includes re-usable bounded MPMC queues in `include/mpmc.hpp`
 
 ## Features
 
@@ -23,18 +23,19 @@ in multi-threaded applications.
 
 - Includable via **CMake FetchContent** for easy dependency management
 
+- **Graceful shutdowns** which block new submissions and allow workers to finish
+execution safely
+
 ## `pool_type`
 
-- `mutex_protected_buffer` protects the buffer with a mutex
+- `mutex` protects the buffer with a mutex
 
-- `vyukov_buffer_spin` draws inspiration from Dimitri Vyukov's design on [1024cores](https://sites.google.com/site/1024cores/home/lock-free-algorithms/queues/bounded-mpmc-queue)
+- `vyukov_spin` draws inspiration from Dimitri Vyukov's design on [1024cores](https://sites.google.com/site/1024cores/home/lock-free-algorithms/queues/bounded-mpmc-queue)
 
-- `vyukov_buffer_idle` where Vyukov spins, idle instead with std::atomic::wait()
+- `vyukov_idle` replaces sequence number waiting spins with std::atomic::wait()
 
-- (WIP) `work_stealing_buffer` uses a completely distinct, decentralised
-paradigm when enqueueing tasks
-
-As of writing, only the first 3 types have been implemented.
+- `work_stealing` uses a decentralized deque model + shared induction buffer for
+external submissions.
 
 ## Architecture Diagrams
 
@@ -108,7 +109,7 @@ The pool should be instantiated as
 #define THREADS 16
 #define SLOTS 1024 
 
-thread_pool<foo, THREADS, SLOTS> bar{}; // Defaults type to pool_type::mutex_protected_buffer
+thread_pool<foo, THREADS, SLOTS> bar{}; // Defaults type to pool_type::mutex
 ```
 
 Avoid constantly constructing and destroying pools as it creates and destroys threads.
@@ -182,4 +183,4 @@ may be added in a future patch.
 
 - Tasks **cannot** be cancelled.
 
-- Exception safety is **not** supported.
+- Exceptions thrown by tasks are not handled, which may terminate worker threads.

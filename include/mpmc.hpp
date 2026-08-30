@@ -14,7 +14,7 @@ enum class pool_type {
     mutex = 0,		// Single mutex protects the entire buffer
     vyukov_spin = 1,			// Vyukov-style two-pointer + sequence number approach
     vyukov_idle = 2,			// Similar to above but threads idle instead of spinning
-    work_stealing_buffer = 3		// Typical decentralized work-stealing approach
+    work_stealing = 3		// Typical decentralized work-stealing approach
 };
 
 

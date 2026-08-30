@@ -130,7 +130,7 @@ private:
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
 // External submit and claim go to the induction buffer, NOT a particular worker deque
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing_buffer> {
+class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing> {
 
 
 public:
