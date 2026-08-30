@@ -153,7 +153,7 @@ public:
 	bool submit(tp_task<func> *task) {
 		if (induction_buffer.submit(task)) {
 			induction_epoch.fetch_add(1, std::memory_order_relaxed);
-			induction_buffer.notify_one();
+			induction_epoch.notify_one();
 			return true;
 		}
 
@@ -163,7 +163,7 @@ public:
 	bool try_submit(tp_task<func> *task) {
 		if (induction_buffer.try_submit(task)) {
 			induction_epoch.fetch_add(1, std::memory_order_relaxed);
-			induction_buffer.notify_one();
+			induction_epoch.notify_one();
 			return true;
 		}
 
