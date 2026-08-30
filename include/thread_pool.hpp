@@ -127,6 +127,7 @@ private:
 
 
 
+thread_local void *deque_ptr = nullptr;
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
 // External submit and claim go to the induction buffer, NOT a particular worker deque
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
@@ -151,6 +152,11 @@ public:
 	}
 
 	bool submit(tp_task<func> *task) {
+		if (deque_ptr != nullptr) {
+			deque *q = (deque*)deque_ptr;
+			return q->push(task);
+		}
+
 		if (induction_buffer.submit(task)) {
 			induction_epoch.fetch_add(1, std::memory_order_relaxed);
 			induction_epoch.notify_one();
@@ -161,6 +167,11 @@ public:
 	}
 
 	bool try_submit(tp_task<func> *task) {
+		if (deque_ptr != nullptr) {
+			deque *q = (deque*)deque_ptr;
+			return q->push(task);
+		}
+
 		if (induction_buffer.try_submit(task)) {
 			induction_epoch.fetch_add(1, std::memory_order_relaxed);
 			induction_epoch.notify_one();
@@ -259,6 +270,8 @@ private:
 	std::atomic<bool> stop;
 
 	void worker_loop(uint32_t worker_index) {
+		deque_ptr = deques + worker_index;
+
 		for (;;) {
 			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
 
