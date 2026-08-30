@@ -38,6 +38,17 @@ struct tp_task<func> {
 
 
 
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
+bool execute(tp_task<func> *task) {
+    if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
+    else std::apply(func, task->args);
+    task->is_result_ready.store(true, std::memory_order_release);
+    task->is_result_ready.notify_one();
+	return true;
+}
+
+
+
 // MPMC thread pool with constexpr sizes for worker and task buffers.
 // Offers 4 different pool types (see pool_type enum) all with identical APIs.
 // Default pool type is mutex.
@@ -90,28 +101,14 @@ public:
     bool claim() {
 		tp_task<func> *task = task_buffer.claim();
 		if (task == nullptr) return false;
-
-        if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-        else std::apply(func, task->args);
-
-        task->is_result_ready.store(true, std::memory_order_release);
-        task->is_result_ready.notify_one();
-
-        return true;
+		return execute(task);
     }
 
     // One-shot version of `claim()`. Returns false instead of waiting.
     bool try_claim() {
         tp_task<func> *task = task_buffer.try_claim();
 		if (task == nullptr) return false;
-
-        if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-        else std::apply(func, task->args);
-
-        task->is_result_ready.store(true, std::memory_order_release);
-        task->is_result_ready.notify_one();
-
-        return true;
+		return execute(task);
     }
 
 
@@ -127,7 +124,12 @@ private:
 
 
 
-static thread_local void *deque_ptr = nullptr;
+struct thread_info {
+	void *deque_ptr = nullptr, *pool_ptr = nullptr;
+
+	bool is_worker(void *curr_pool) { return deque_ptr != nullptr && pool_ptr == curr_pool; }
+};
+static thread_local thread_info curr_thread{};
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
 // External submit and claim go to the induction buffer, NOT a particular worker deque
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
@@ -152,8 +154,8 @@ public:
 	}
 
 	bool submit(tp_task<func> *task) {
-		if (deque_ptr != nullptr) {
-			deque *q = (deque*)deque_ptr;
+		if (curr_thread.is_worker(this)) {
+			deque *q = (deque*)curr_thread.deque_ptr;
 			auto res = q->push(task);
 			if (res) return true;
 		}
@@ -168,8 +170,8 @@ public:
 	}
 
 	bool try_submit(tp_task<func> *task) {
-		if (deque_ptr != nullptr) {
-			deque *q = (deque*)deque_ptr;
+		if (curr_thread.is_worker(this)) {
+			deque *q = (deque*)curr_thread.deque_ptr;
 			auto res = q->push(task);
 			if (res) return true;
 		}
@@ -185,15 +187,21 @@ public:
 
 	bool claim() {
 		tp_task<func> *task = nullptr;
-		if (deque_ptr != nullptr) task = ((deque*)deque_ptr)->pop();
-		if (task == nullptr) task = induction_buffer.claim();
+
+		if (curr_thread.is_worker(this) && (task = ((deque*)curr_thread.deque_ptr)->pop()) != nullptr) {
+			return execute(task);
+		}
+
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+			if ((task = deques[i].steal()) != nullptr) break;
+		}
 
 		if (task != nullptr) {
-            if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-            else std::apply(func, task->args);
-            task->is_result_ready.store(true, std::memory_order_release);
-            task->is_result_ready.notify_one();
-            return true;
+			return execute(task);
+		}
+
+		if ((task = induction_buffer.claim()) != nullptr) {
+			return execute(task);
 		}
 
 		return false;
@@ -201,16 +209,17 @@ public:
 
 	bool try_claim() {
 		tp_task<func> *task = nullptr;
-		if (deque_ptr != nullptr) task = ((deque*)deque_ptr)->pop();
-		if (task == nullptr) task = induction_buffer.try_claim();
 
-		if (task != nullptr) {
-            if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-            else std::apply(func, task->args);
-            task->is_result_ready.store(true, std::memory_order_release);
-            task->is_result_ready.notify_one();
-            return true;
+		if (curr_thread.is_worker(this) && (task = ((deque*)curr_thread.deque_ptr)->pop()) != nullptr)
+			return execute(task);
+
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+			if ((task = deques[i].steal()) != nullptr) break;
 		}
+
+		if (task != nullptr) return execute(task);
+
+		if ((task = induction_buffer.try_claim()) != nullptr) return execute(task);
 
 		return false;
 	}
@@ -280,31 +289,11 @@ private:
 	std::atomic<bool> stop;
 
 	void worker_loop(uint32_t worker_index) {
-		deque_ptr = deques + worker_index;
+		curr_thread.deque_ptr = deques + worker_index;
+		curr_thread.pool_ptr = this;
 
 		for (;;) {
 			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
-
-			if (auto task = deques[worker_index].pop()) {
-				if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-				else std::apply(func, task->args);
-				task->is_result_ready.store(true, std::memory_order_release);
-				task->is_result_ready.notify_one();
-				continue;
-			}
-
-			tp_task<func> *task = nullptr;
-			for (uint32_t i = 0; i < worker_buffer_len; i++) {
-				if ((task = deques[i].steal()) != nullptr) break;
-			}
-
-			if (task != nullptr) {
-                if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-                else std::apply(func, task->args);
-                task->is_result_ready.store(true, std::memory_order_release);
-                task->is_result_ready.notify_one();
-                continue;
-            }
 
 			if (!try_claim()) {
 				auto local_epoch = induction_epoch.load(std::memory_order_relaxed);
