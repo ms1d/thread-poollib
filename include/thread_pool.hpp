@@ -1,8 +1,7 @@
 #pragma once
 
+#include "mpmc.hpp"
 #include <atomic>
-#include <condition_variable>
-#include <mutex>
 #include <thread>
 #include <cstdint>
 #include <type_traits>
@@ -38,26 +37,23 @@ struct tp_task<func> {
 };
 
 
-// Enumerates different types of thread pool buffers.
-enum pool_type {
-    mutex_protected_buffer = 0,		// Single mutex protects the entire buffer
-    vyukov_buffer_spin = 1,			// Vyukov-style two-pointer + sequence number approach
-    vyukov_buffer_idle = 2,			// Similar to above but threads idle instead of spinning
-    work_stealing_buffer = 3		// Typical decentralized work-stealing approach
-};
-
 
 // MPMC thread pool with constexpr sizes for worker and task buffers.
 // Offers 4 different pool types (see pool_type enum) all with identical APIs.
-// Default pool type is mutex_protected_buffer.
-template<auto func, uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex_protected_buffer>
+// Default pool type is mutex.
+template<auto func, uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex>
 class thread_pool;
 
-// Mutex-protected buffer implementation of thread pool.
+// (pool_type::mutex) Mutex-protected buffer implementation of thread pool.
 // - 1 mutex protects the whole buffer; consumers and producers cannot work at the same time
 // - Usually worse throughput, but do benchmark in your applications
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::mutex_protected_buffer> {
+//
+// (pool_type::vyukov*) Lock free implementation of thread pool based on Vyukov's sequence numbers
+//	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
+//	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
+requires(type == pool_type::vyukov_spin || type == pool_type::vyukov_idle || type == pool_type::mutex)
+class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 
 
 
@@ -72,8 +68,7 @@ public:
 
     // Destructor stops all worker threads and joins them.
     ~thread_pool() {
-        stop = true;
-        task_buffer_cv.notify_all();
+		task_buffer.shutdown();
 
         for (uint32_t i = 0; i < worker_buffer_len; i++)
             worker_buffer[i].join();
@@ -83,78 +78,32 @@ public:
 	// Blocking method that submits a task to the thread pool, and waits if it is full.
 	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
-		std::unique_lock<std::mutex> l(task_buffer_mutex);
-		task_buffer_cv.wait(l, [this] () {
-			return tail - head < task_buffer_len || stop.load(std::memory_order_relaxed);
-		});
-
-		if (stop.load(std::memory_order_relaxed)) return false;
-
-		task_buffer[tail % task_buffer_len] = task;
-		tail++;
-
-		l.unlock();
-		task_buffer_cv.notify_one();
-    
-        return true;
+		return task_buffer.submit(task);
 	}
 
     // One-shot version of `submit()`. Returns false instead of waiting.
     bool try_submit(tp_task<func> *task) {
-        {
-            std::lock_guard<std::mutex> l(task_buffer_mutex);
-
-			if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == task_buffer_len
-					|| stop.load(std::memory_order_relaxed))
-				return false;
-
-            task_buffer[tail % task_buffer_len] = task;
-            tail++;
-        }
-        
-		task_buffer_cv.notify_one();
-
-        return true;
+		return task_buffer.try_submit(task);
     }
 
     // Claims a task from the thread pool and executes it.
     bool claim() {
-		tp_task<func> *task = nullptr;
-        
-		std::unique_lock<std::mutex> l(task_buffer_mutex);
-        task_buffer_cv.wait(l, [this] () {
-            return stop || tail.load(std::memory_order_relaxed) != head.load(std::memory_order_relaxed);
-        });
-
-        task = task_buffer[head % task_buffer_len];
-        head++;
-        l.unlock();
+		tp_task<func> *task = task_buffer.claim();
+		if (task == nullptr) return false;
 
         if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
         else std::apply(func, task->args);
 
         task->is_result_ready.store(true, std::memory_order_release);
         task->is_result_ready.notify_one();
-        
-		if (stop.load(std::memory_order_relaxed)
-				&& tail.load(std::memory_order_relaxed) == head.load(std::memory_order_relaxed)) return false;
 
         return true;
     }
 
     // One-shot version of `claim()`. Returns false instead of waiting.
     bool try_claim() {
-		if (stop.load(std::memory_order_relaxed)) return false;
-        tp_task<func> *task = nullptr;
-
-        {
-            std::lock_guard<std::mutex> l(task_buffer_mutex);
-
-            if (tail.load(std::memory_order_relaxed) - head.load(std::memory_order_relaxed) == 0) return false;
-
-            task = task_buffer[head % task_buffer_len];
-            head++;
-        }
+        tp_task<func> *task = task_buffer.try_claim();
+		if (task == nullptr) return false;
 
         if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
         else std::apply(func, task->args);
@@ -167,326 +116,11 @@ public:
 
 
 private:
-    std::mutex task_buffer_mutex;  // Mutex to protect the task buffer
-    std::condition_variable task_buffer_cv;  // Condition variable for task availability
-    tp_task<func> *task_buffer[task_buffer_len];  // Array of task pointers
-    std::thread worker_buffer[worker_buffer_len];  // Array of worker threads
-
-    alignas(64) std::atomic<uint32_t> head, tail;  // Atomic indices for managing the task buffer
-    std::atomic<bool> stop;  // Flag to initiate shutdown of workers
+    std::thread worker_buffer[worker_buffer_len];
+	mpmc<tp_task<func>, task_buffer_len, type> task_buffer;
 
 
     void worker_loop() {
         while (claim());
     }
-};
-
-
-// Lock free implementation of thread pool based on Vyukov's sequence numbers
-//	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
-//	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
-requires(type == pool_type::vyukov_buffer_spin || type == pool_type::vyukov_buffer_idle)
-class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
-public:
-	
-	thread_pool() {
-		for (uint32_t i = 0; i < task_buffer_len; i++) 
-			task_buffer[i].seq_num = i;
-
-		for (uint32_t i = 0; i < worker_buffer_len; i++)
-			worker_buffer[i] = std::thread([this] () {
-                worker_loop();
-            });
-	}
-
-	~thread_pool() {
-		stop.store(true, std::memory_order_relaxed);
-
-		for (uint32_t i = 0; i < worker_buffer_len; i++)
-            worker_buffer[i].join();
-	}
-
-	// Blocking method that submits a task to the thread pool, and waits if it is full.
-	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
-	bool submit(tp_task<func> *task) {
-		for (;;) {
-			if (stop.load(std::memory_order_relaxed)) return false;
-
-			auto head_local = head.load(std::memory_order_relaxed),
-				 tail_local = tail.load(std::memory_order_relaxed);
-
-			while (tail_local - head_local < task_buffer_len &&
-					!tail.compare_exchange_weak(tail_local, tail_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-				head_local = head.load(std::memory_order_relaxed);
-			}
-
-			if (tail_local - head_local >= task_buffer_len) {
-				head.wait(head_local, std::memory_order_relaxed); continue;
-			}
-
-			tail.notify_one();
-			
-			slot *s = &task_buffer[tail_local % task_buffer_len];
-			uint32_t seq_num_local;
-			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
-				if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
-			}
-
-			s->task = task;
-			s->seq_num.store(tail_local + 1, std::memory_order_release);
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
-
-			return true;
-		}
-	}
-	
-    // One-shot version of `submit()`. Returns false instead of waiting if pool is full.
-	bool try_submit(tp_task<func> *task) { 
-		if (stop.load(std::memory_order_relaxed)) return false;
-		
-		auto head_local = head.load(std::memory_order_relaxed),
-			 tail_local = tail.load(std::memory_order_relaxed);
-
-		while (tail_local - head_local < task_buffer_len &&
-				!tail.compare_exchange_weak(tail_local, tail_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-			head_local = head.load(std::memory_order_relaxed);
-		}
-
-		if (tail_local - head_local >= task_buffer_len) return false;
-
-		tail.notify_one();
-
-		slot *s = &task_buffer[tail_local % task_buffer_len];
-		uint32_t seq_num_local;
-		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
-		}
-
-		s->task = task;
-		s->seq_num.store(tail_local + 1, std::memory_order_release);
-		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
-
-		return true;
-	}
-
-    
-    // Claims a task from the thread pool and executes it. Returns whether or not a task was completed
-	bool claim() {
-		for (;;) {	
-			auto head_local = head.load(std::memory_order_relaxed),
-				 tail_local = tail.load(std::memory_order_relaxed);
-
-			while (head_local != tail_local &&
-					!head.compare_exchange_weak(head_local, head_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-				tail_local = tail.load(std::memory_order_relaxed);
-			}
-
-			if (tail_local == head_local) {
-				tail.wait(tail_local, std::memory_order_relaxed); continue;
-			}
-
-			head.notify_one();
-
-			slot *s = &task_buffer[head_local % task_buffer_len];
-			uint32_t seq_num_local;
-
-			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire)) != head_local + 1) {
-				if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
-			}
-
-			tp_task<func> *task = s->task;
-			s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
-
-			if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-			else std::apply(func, task->args);
-
-			task->is_result_ready.store(true, std::memory_order_release);
-			task->is_result_ready.notify_one();
-			
-			if (stop.load(std::memory_order_relaxed)
-					&& tail.load(std::memory_order_relaxed) == head.load(std::memory_order_relaxed)) return false;
-
-			return true;
-		}
-	}
-    
-    // One-shot version of `claim()`. Returns false instead of waiting.
-	bool try_claim() {
-		if (stop.load(std::memory_order_relaxed)) return false;
-
-		auto head_local = head.load(std::memory_order_relaxed),
-             tail_local = tail.load(std::memory_order_relaxed);
-
-		while (head_local != tail_local
-				&& !head.compare_exchange_weak(head_local, head_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
-            tail_local = tail.load(std::memory_order_relaxed);
-        }
-
-		if (tail_local == head_local) return false;
-
-		head.notify_one();
-
-		slot *s = &task_buffer[head_local % task_buffer_len];
-		uint32_t seq_num_local;
-
-		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire)) != head_local + 1) {
-			if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
-		}
-
-		tp_task<func> *task = s->task;
-		s->seq_num.store(seq_num_local + task_buffer_len - 1, std::memory_order_release);
-		if constexpr (type == pool_type::vyukov_buffer_idle) s->seq_num.notify_all();
-
-		if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-		else std::apply(func, task->args);
-
-		task->is_result_ready.store(true, std::memory_order_release);
-		task->is_result_ready.notify_one();
-
-		return true;
-	}
-
-private:
-	struct alignas(64) slot {
-		tp_task<func> *task = nullptr;
-		std::atomic<uint32_t> seq_num = 0;
-	};
-
-	slot task_buffer[task_buffer_len];
-	std::thread worker_buffer[worker_buffer_len];
-
-	alignas(64) std::atomic<uint32_t> head, tail;
-	std::atomic<bool> stop;
-
-	void worker_loop() {
-		while (claim());
-	}
-};
-
-
-
-// NOT IMPLEMENTED
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing_buffer> {
-
-
-public:
-
-	thread_pool() {
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
-			workers[i] = std::thread([this, i] () {
-				worker_loop(i);
-			});
-		}
-	}
-
-	~thread_pool() {
-		stop = true;
-
-		for (uint32_t i = 0; i < worker_buffer_len; i++) workers[i].join();
-	}
-
-	bool try_submit(tp_task<func> *task) {
-		if (stop.load(std::memory_order_relaxed)) return false;
-		for (uint32_t i = 0; i < worker_buffer_len; i++) if (deques[i].push(task)) return true;
-		return false;
-	}
-
-	bool try_claim() {
-		if (stop.load(std::memory_order_relaxed)) return false;
-		tp_task<func> *task = nullptr;
-
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
-			if ((task = deques[i].steal()) != nullptr) {
-				if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-				else std::apply(func, task->args);
-				task->is_result_ready.store(true, std::memory_order_release);
-				task->is_result_ready.notify_one();
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-
-private:
-
-	struct deque {
-		// convention: owner moves top, thieves steal from bottom
-		alignas(64) std::atomic<uint32_t> top, bottom;
-		tp_task<func> *task_buffer[task_buffer_len];
-
-		bool push(tp_task<func> *task) {
-			auto top_local = top.load(std::memory_order_relaxed),
-				 bottom_local = bottom.load(std::memory_order_relaxed);
-			if (top_local - bottom_local == task_buffer_len) return false;
-			task_buffer[top_local % task_buffer_len] = task;
-			top.store(top_local + 1, std::memory_order_release);
-			top.notify_one();
-			return true;
-		}
-
-		tp_task<func> *pop() {
-			for(;;) {
-				auto top_local = top.load(std::memory_order_relaxed),
-					 bottom_local = bottom.load(std::memory_order_relaxed);
-
-				if (top_local == bottom_local) return nullptr;
-
-				if (top_local == bottom_local + 1) {
-					if (!bottom.compare_exchange_strong(bottom_local, bottom_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) return nullptr;
-					return task_buffer[bottom_local % task_buffer_len];
-
-				} else {
-					if (!top.compare_exchange_strong(top_local, top_local - 1, std::memory_order_relaxed, std::memory_order_relaxed)) continue;
-					return task_buffer[top_local % task_buffer_len];
-				}
-			}
-		}
-
-		tp_task<func> *steal() {
-			auto top_local = top.load(std::memory_order_acquire),
-				 bottom_local = bottom.load(std::memory_order_relaxed);
-
-			while (top_local != bottom_local && !bottom.compare_exchange_weak(bottom_local, bottom_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
-				top_local = top.load(std::memory_order_acquire);
-			}
-
-			if (top_local == bottom_local) return nullptr;
-
-			return task_buffer[bottom_local % task_buffer_len];
-		}
-
-		uint32_t size() {
-			auto top_local = top.load(std::memory_order_relaxed),
-				 bottom_local = bottom.load(std::memory_order_relaxed);
-			return top_local - bottom_local;
-		}
-	};
-
-	deque deques[worker_buffer_len];
-	std::thread workers[worker_buffer_len];
-	std::atomic<bool> stop;
-
-	void worker_loop(uint32_t worker_index) {
-		for (;;) {
-			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
-
-			if (auto task = deques[worker_index].pop()) {
-				if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
-				else std::apply(func, task->args);
-				task->is_result_ready.store(true, std::memory_order_release);
-				task->is_result_ready.notify_one();
-			}
-
-			if (!try_claim()) {
-				auto &top = deques[worker_index].top;
-				top.wait(top.load(std::memory_order_relaxed), std::memory_order_relaxed);
-			}
-		}
-	}
-
 };
