@@ -41,7 +41,7 @@ struct tp_task<func> {
 // Enumerates different types of thread pool buffers.
 enum pool_type {
     mutex_protected_buffer = 0,		// Single mutex protects the entire buffer
-    vyukov_buffer_spin = 1,			// Vyukov-style two-pointer + sequence number approach, lock-free
+    vyukov_buffer_spin = 1,			// Vyukov-style two-pointer + sequence number approach
     vyukov_buffer_idle = 2,			// Similar to above but threads idle instead of spinning
     work_stealing_buffer = 3		// Typical decentralized work-stealing approach
 };
@@ -182,7 +182,7 @@ private:
 };
 
 
-// Lock free implementation of thread pool via Vyukov sequence numbers
+// Lock free implementation of thread pool based on Vyukov's sequence numbers
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>

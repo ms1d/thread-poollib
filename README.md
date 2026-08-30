@@ -4,14 +4,14 @@
 - [thread-poollib](#thread-poollib)
   - [Features](#features)
   - [`pool_type`](#pool_type)
-  - [Architecture](#architecture)
+  - [Architecture Diagrams](#architecture-diagrams)
   - [Usage](#usage)
   - [Benchmarks](#benchmarks)
   - [Notes, Limitations & Quirks](#notes-limitations-quirks)
 <!--toc:end-->
 
-Lightweight templated MPMC thread pool header-only library designed to get
-out of your way when you need MPMC concurrency.
+Lightweight templated MPMC thread pool header-only library designed to improve performance
+in multi-threaded applications.
 
 ## Features
 
@@ -36,9 +36,60 @@ paradigm when enqueueing tasks
 
 As of writing, only the first 3 types have been implemented.
 
-## Architecture
+## Architecture Diagrams
 
-diagram go here
+### Mutex variant
+
+#### Mutex submission/consumption workflow
+
+```mermaid
+flowchart LR
+A[submit/claim] --> B[acquire mutex]
+B --> C{is pool full/empty?}
+C --> |yes| D[wait on cv/return false]
+D --> |on wake| E{is pool shutting down?}
+E --> |yes| F[return false]
+E --> |no| G[write/read task, release mutex, notify CV,
+do task if worker, return true]
+B --> |no| G
+```
+
+### Vyukov variants
+
+#### Vyukov submission/consumption workflow
+
+```mermaid
+flowchart LR
+A[submit/claim] --> B{is pool shutting down?}
+B --> |yes| C[return false]
+B --> |no| D{is pool full/empty?}
+D --> |yes| E[std::atomic::wait/return false]
+E --> |on wake| D
+D --> |no| F[reserve position via CAS, idle/spin for correct seq_num]
+F --> G[write task, update seq_num, return true]
+```
+
+#### Vyukov sequence number handling
+
+Producers expect `seq_num` == i, while consumers expect `seq_num` == i + 1.
+Producers increment `seq_num` by 1, while consumers increment it by
+`task_buffer_len` - 1. This allows threads to distinguish between whether a
+slot is being used by a consumer or producer, and between generations of producers
+and consumers when head and tail pointers eventually wrap around the buffer.
+
+```mermaid
+flowchart LR
+A[producer claims slot N] --> B{seq_num == N?}
+B --> |no| C[idle/spin]
+C --> B
+B --> |yes| D[write task, seq_num++]
+D --> E[consumer may now claim]
+
+E --> F{seq == N+1?}
+F --> |no| G[idle/spin]
+G --> F
+F --> |yes| H[read task, seq_num = N + buffer_size]
+```
 
 ## Usage
 
@@ -113,6 +164,8 @@ typically negligible.
 ## Benchmarks
 
 > A benchmark suite is to be added soon. See issue #7
+
+<a id="notes-limitations-quirks"></a>
 
 ## Notes, Limitations & Quirks
 
