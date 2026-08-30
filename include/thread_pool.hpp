@@ -127,7 +127,7 @@ private:
 
 
 
-thread_local void *deque_ptr = nullptr;
+static thread_local void *deque_ptr = nullptr;
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
 // External submit and claim go to the induction buffer, NOT a particular worker deque
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
