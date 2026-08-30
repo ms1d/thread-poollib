@@ -377,7 +377,7 @@ public:
 	thread_pool() {
 		for (uint32_t i = 0; i < worker_buffer_len; i++) {
 			workers[i] = std::thread([this, i] () {
-				worker_loop<i>();
+				worker_loop(i);
 			});
 		}
 	}
@@ -471,8 +471,7 @@ private:
 	std::thread workers[worker_buffer_len];
 	std::atomic<bool> stop;
 
-	template<uint32_t worker_index>
-	void worker_loop() {
+	void worker_loop(uint32_t worker_index) {
 		for (;;) {
 			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
 
