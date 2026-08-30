@@ -154,7 +154,8 @@ public:
 	bool submit(tp_task<func> *task) {
 		if (deque_ptr != nullptr) {
 			deque *q = (deque*)deque_ptr;
-			return q->push(task);
+			auto res = q->push(task);
+			if (res) return true;
 		}
 
 		if (induction_buffer.submit(task)) {
@@ -169,7 +170,8 @@ public:
 	bool try_submit(tp_task<func> *task) {
 		if (deque_ptr != nullptr) {
 			deque *q = (deque*)deque_ptr;
-			return q->push(task);
+			auto res = q->push(task);
+			if (res) return true;
 		}
 
 		if (induction_buffer.try_submit(task)) {
