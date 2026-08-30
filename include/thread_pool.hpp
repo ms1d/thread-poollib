@@ -370,4 +370,100 @@ private:
 
 // NOT IMPLEMENTED
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing_buffer>;
+class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing_buffer> {
+
+
+public:
+	bool try_submit(tp_task<func> *task) {
+		for (uint32_t i = 0; i < worker_buffer_len; i++) if (deques[i].push(task)) return true;
+		return false;
+	}
+
+	bool try_claim() {
+		tp_task<func> *task = nullptr;
+
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+			if ((task = deques[i].steal()) != nullptr) {
+				if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
+				else std::apply(func, task->args);
+				task->is_result_ready.store(true, std::memory_order_release);
+				task->is_result_ready.notify_one();
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+
+private:
+
+	struct deque {
+		// convention: owner moves top, thieves steal from bottom
+		alignas(64) std::atomic<uint32_t> top, bottom;
+		tp_task<func> *task_buffer[task_buffer_len];
+
+		bool push(tp_task<func> *task) {
+			auto top_local = top.load(std::memory_order_relaxed),
+				 bottom_local = bottom.load(std::memory_order_relaxed);
+			if (top_local - bottom_local == task_buffer_len) return false;
+			task_buffer[top_local % task_buffer_len] = task;
+			top.store(top_local + 1, std::memory_order_release);
+			top.notify_one();
+			return true;
+		}
+
+		tp_task<func> *pop() {
+			for(;;) {
+				auto top_local = top.load(std::memory_order_relaxed),
+					 bottom_local = bottom.load(std::memory_order_relaxed);
+
+				if (top_local == bottom_local) return nullptr;
+
+				if (top_local == bottom_local + 1) {
+					if (!bottom.compare_exchange_strong(bottom_local, bottom_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) return nullptr;
+					return task_buffer[bottom_local % task_buffer_len];
+
+				} else {
+					if (!top.compare_exchange_strong(top_local, top_local - 1, std::memory_order_relaxed, std::memory_order_relaxed)) continue;
+					return task_buffer[top_local % task_buffer_len];
+				}
+			}
+		}
+
+		tp_task<func> *steal() {
+			auto top_local = top.load(std::memory_order_acquire),
+				 bottom_local = bottom.load(std::memory_order_relaxed);
+
+			while (top_local != bottom_local && !bottom.compare_exchange_weak(bottom_local, bottom_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+				top_local = top.load(std::memory_order_acquire);
+			}
+
+			if (top_local == bottom_local) return nullptr;
+
+			return task_buffer[bottom_local % task_buffer_len];
+		}
+	};
+
+	deque deques[worker_buffer_len];
+	std::thread workers[worker_buffer_len];
+	std::atomic<bool> stop;
+
+	template<uint32_t worker_index>
+	void worker_loop() {
+		for (;;) {
+			if (auto task = deques[worker_index].pop()) {
+				if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
+				else std::apply(func, task->args);
+				task->is_result_ready.store(true, std::memory_order_release);
+				task->is_result_ready.notify_one();
+			}
+
+			if (!try_claim()) {
+				auto &top = deques[worker_index].top;
+				top.wait(top.load(std::memory_order_relaxed), std::memory_order_relaxed);
+			}
+		}
+	}
+
+};
