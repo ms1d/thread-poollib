@@ -126,6 +126,11 @@ struct mpmc<obj, len, type> {
 	alignas(64) std::atomic<uint32_t> head, tail;
 	std::atomic<bool> stop;
 
+	void shutdown() {
+		stop = true;
+		tail.notify_all();
+	}
+
 	mpmc() {
 		for (uint32_t i = 0; i < len; i++) object_buffer[i].seq_num = i;
 	}
