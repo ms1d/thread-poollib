@@ -247,7 +247,7 @@ private:
 		bool push(tp_task<func> *task) {
 			auto top_local = top.load(std::memory_order_relaxed),
 				 bottom_local = bottom.load(std::memory_order_relaxed);
-			if (top_local - bottom_local == task_buffer_len) return false;
+			if (bottom_local - top_local == task_buffer_len) return false;
 			task_buffer[bottom_local % task_buffer_len] = task;
 			bottom.store(bottom_local + 1, std::memory_order_release);
 			return true;
