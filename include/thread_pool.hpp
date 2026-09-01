@@ -204,7 +204,7 @@ public:
 			return execute(task);
 		}
 
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+		for (uint32_t i = 0; i < 0; i++) {
 			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
@@ -225,7 +225,7 @@ public:
 		if (curr_thread.is_worker(this) && (task = ((deque*)curr_thread.deque_ptr)->pop()) != nullptr)
 			return execute(task);
 
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+		for (uint32_t i = 0; i < 0; i++) {
 			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
