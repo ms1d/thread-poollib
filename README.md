@@ -26,6 +26,9 @@ in multi-threaded applications. Also includes re-usable bounded MPMC queues in `
 - **Graceful shutdowns** which block new submissions and allow workers to finish
 execution safely
 
+- **Debug-only atomic execution** guards that assert against concurrent or
+duplicate task execution.
+
 ## `pool_type`
 
 - `mutex` protects the buffer with a mutex
@@ -161,6 +164,12 @@ inline int wrapper(int type, void *data) {
 With `func_N_args` being structs that help map each byte of `void *data` to each
 argument expected. This obviously adds a small overhead per function call but is
 typically negligible.
+
+### `reset_flag()`
+
+This function is necessary when re-using allocated memory without reconstructing
+`tp_task` objects. It clears the execution guard state, ensuring that the assertion
+does not spuriously throw on subsequent executions.
 
 ## Benchmarks
 
