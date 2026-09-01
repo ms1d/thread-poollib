@@ -204,7 +204,7 @@ public:
 			return execute(task);
 		}
 
-		for (uint32_t i = 0; i < 0; i++) {
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
 			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
@@ -225,7 +225,7 @@ public:
 		if (curr_thread.is_worker(this) && (task = ((deque*)curr_thread.deque_ptr)->pop()) != nullptr)
 			return execute(task);
 
-		for (uint32_t i = 0; i < 0; i++) {
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
 			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
@@ -240,7 +240,7 @@ public:
 private:
 
 	struct deque {
-		// convention: owner moves top, thieves steal from bottom
+		// convention: owner moves bottom, thieves steal from top
 		alignas(64) std::atomic<uint32_t> top, bottom;
 		tp_task<func> *task_buffer[task_buffer_len];
 
@@ -248,8 +248,8 @@ private:
 			auto top_local = top.load(std::memory_order_relaxed),
 				 bottom_local = bottom.load(std::memory_order_relaxed);
 			if (top_local - bottom_local == task_buffer_len) return false;
-			task_buffer[top_local % task_buffer_len] = task;
-			top.store(top_local + 1, std::memory_order_release);
+			task_buffer[bottom_local % task_buffer_len] = task;
+			bottom.store(bottom_local + 1, std::memory_order_release);
 			return true;
 		}
 
@@ -260,13 +260,13 @@ private:
 
 				if (top_local == bottom_local) return nullptr;
 
-				if (top_local == bottom_local + 1) {
-					if (!bottom.compare_exchange_strong(bottom_local, bottom_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) return nullptr;
-					return task_buffer[bottom_local % task_buffer_len];
+				if (top_local + 1 == bottom_local) {
+					if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) return nullptr;
+					return task_buffer[top_local % task_buffer_len];
 
 				} else {
-					if (!top.compare_exchange_strong(top_local, top_local - 1, std::memory_order_relaxed, std::memory_order_relaxed)) continue;
-					return task_buffer[top_local % task_buffer_len];
+					if (!bottom.compare_exchange_strong(bottom_local, bottom_local - 1, std::memory_order_relaxed, std::memory_order_relaxed)) continue;
+					return task_buffer[bottom_local % task_buffer_len];
 				}
 			}
 		}
@@ -275,19 +275,19 @@ private:
 			auto top_local = top.load(std::memory_order_acquire),
 				 bottom_local = bottom.load(std::memory_order_relaxed);
 
-			while (top_local != bottom_local && !bottom.compare_exchange_weak(bottom_local, bottom_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
-				top_local = top.load(std::memory_order_acquire);
+			while (top_local != bottom_local && !top.compare_exchange_weak(top_local, top_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+				bottom_local = bottom.load(std::memory_order_acquire);
 			}
 
 			if (top_local == bottom_local) return nullptr;
 
-			return task_buffer[bottom_local % task_buffer_len];
+			return task_buffer[top_local % task_buffer_len];
 		}
 
 		uint32_t size() {
 			auto top_local = top.load(std::memory_order_relaxed),
 				 bottom_local = bottom.load(std::memory_order_relaxed);
-			return top_local - bottom_local;
+			return bottom_local - top_local;
 		}
 	};
 
