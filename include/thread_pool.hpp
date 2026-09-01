@@ -148,6 +148,7 @@ public:
 
 	~thread_pool() {
 		stop = true;
+		induction_epoch.fetch_add(1, std::memory_order_relaxed);
 		induction_epoch.notify_all();
 		induction_buffer.shutdown();
 		for (uint32_t i = 0; i < worker_buffer_len; i++) workers[i].join();
@@ -303,11 +304,10 @@ private:
 		curr_thread.pool_ptr = this;
 
 		for (;;) {
-			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
-
 			if (!try_claim()) {
 				auto local_epoch = induction_epoch.load(std::memory_order_relaxed);
 				induction_epoch.wait(local_epoch, std::memory_order_relaxed);
+				if (stop.load(std::memory_order_relaxed)) return;
 			}
 		}
 	}
