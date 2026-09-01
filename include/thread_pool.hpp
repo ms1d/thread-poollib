@@ -158,14 +158,14 @@ public:
 			deque *q = (deque*)curr_thread.deque_ptr;
 			auto res = q->push(task);
 			if (res) {
-				induction_epoch.fetch_add(1, std::memory_order_seq_cst);
+				induction_epoch.fetch_add(1, std::memory_order_relaxed);
 				induction_epoch.notify_one();
 				return true;
 			}
 		}
 
 		if (induction_buffer.submit(task)) {
-			induction_epoch.fetch_add(1, std::memory_order_seq_cst);
+			induction_epoch.fetch_add(1, std::memory_order_relaxed);
 			induction_epoch.notify_one();
 			return true;
 		}
@@ -178,14 +178,14 @@ public:
 			deque *q = (deque*)curr_thread.deque_ptr;
 			auto res = q->push(task);
 			if (res) {
-				induction_epoch.fetch_add(1, std::memory_order_seq_cst);
+				induction_epoch.fetch_add(1, std::memory_order_relaxed);
 				induction_epoch.notify_one();
 				return true;
 			}
 		}
 
 		if (induction_buffer.try_submit(task)) {
-			induction_epoch.fetch_add(1, std::memory_order_seq_cst);
+			induction_epoch.fetch_add(1, std::memory_order_relaxed);
 			induction_epoch.notify_one();
 			return true;
 		}
@@ -241,8 +241,8 @@ private:
 		tp_task<func> *task_buffer[task_buffer_len];
 
 		bool push(tp_task<func> *task) {
-			auto top_local = top.load(std::memory_order_seq_cst),
-				 bottom_local = bottom.load(std::memory_order_seq_cst);
+			auto top_local = top.load(std::memory_order_relaxed),
+				 bottom_local = bottom.load(std::memory_order_relaxed);
 			if (top_local - bottom_local == task_buffer_len) return false;
 			task_buffer[top_local % task_buffer_len] = task;
 			top.store(top_local + 1, std::memory_order_release);
@@ -251,17 +251,17 @@ private:
 
 		tp_task<func> *pop() {
 			for(;;) {
-				auto top_local = top.load(std::memory_order_seq_cst),
-					 bottom_local = bottom.load(std::memory_order_seq_cst);
+				auto top_local = top.load(std::memory_order_relaxed),
+					 bottom_local = bottom.load(std::memory_order_relaxed);
 
 				if (top_local == bottom_local) return nullptr;
 
 				if (top_local == bottom_local + 1) {
-					if (!bottom.compare_exchange_strong(bottom_local, bottom_local + 1, std::memory_order_seq_cst, std::memory_order_seq_cst)) return nullptr;
+					if (!bottom.compare_exchange_strong(bottom_local, bottom_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) return nullptr;
 					return task_buffer[bottom_local % task_buffer_len];
 
 				} else {
-					if (!top.compare_exchange_strong(top_local, top_local - 1, std::memory_order_seq_cst, std::memory_order_seq_cst)) continue;
+					if (!top.compare_exchange_strong(top_local, top_local - 1, std::memory_order_relaxed, std::memory_order_relaxed)) continue;
 					return task_buffer[top_local % task_buffer_len];
 				}
 			}
@@ -269,9 +269,9 @@ private:
 
 		tp_task<func> *steal() {
 			auto top_local = top.load(std::memory_order_acquire),
-				 bottom_local = bottom.load(std::memory_order_seq_cst);
+				 bottom_local = bottom.load(std::memory_order_relaxed);
 
-			while (top_local != bottom_local && !bottom.compare_exchange_weak(bottom_local, bottom_local + 1, std::memory_order_acquire, std::memory_order_seq_cst)) {
+			while (top_local != bottom_local && !bottom.compare_exchange_weak(bottom_local, bottom_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
 				top_local = top.load(std::memory_order_acquire);
 			}
 
@@ -281,8 +281,8 @@ private:
 		}
 
 		uint32_t size() {
-			auto top_local = top.load(std::memory_order_seq_cst),
-				 bottom_local = bottom.load(std::memory_order_seq_cst);
+			auto top_local = top.load(std::memory_order_relaxed),
+				 bottom_local = bottom.load(std::memory_order_relaxed);
 			return top_local - bottom_local;
 		}
 	};
@@ -300,11 +300,11 @@ private:
 		curr_thread.pool_ptr = this;
 
 		for (;;) {
-			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_seq_cst)) return;
+			if (deques[worker_index].size() == 0 && stop.load(std::memory_order_relaxed)) return;
 
 			if (!try_claim()) {
-				auto local_epoch = induction_epoch.load(std::memory_order_seq_cst);
-				induction_epoch.wait(local_epoch, std::memory_order_seq_cst);
+				auto local_epoch = induction_epoch.load(std::memory_order_relaxed);
+				induction_epoch.wait(local_epoch, std::memory_order_relaxed);
 			}
 		}
 	}
