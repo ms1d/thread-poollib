@@ -276,13 +276,15 @@ private:
 			auto top_local = top.load(std::memory_order_acquire),
 				 bottom_local = bottom.load(std::memory_order_relaxed);
 
-			while (top_local != bottom_local && !top.compare_exchange_weak(top_local, top_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
-				bottom_local = bottom.load(std::memory_order_acquire);
-			}
-
 			if (top_local == bottom_local) return nullptr;
 
-			return task_buffer[top_local % task_buffer_len];
+			auto task = task_buffer[top_local % task_buffer_len];
+
+			if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+				return nullptr;
+			}
+
+			return task;
 		}
 
 		uint32_t size() {
