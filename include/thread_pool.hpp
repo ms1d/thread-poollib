@@ -20,6 +20,7 @@ struct tp_task<func> {
     R result;          // Var to store the result of the task
     std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
+	std::atomic_flag executing = ATOMIC_FLAG_INIT;
 
 	tp_task() = default;
 	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
@@ -40,6 +41,7 @@ struct tp_task<func> {
 
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
 bool execute(tp_task<func> *task) {
+	assert(!task->executing.test_and_set(std::memory_order_acquire));
     if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
     else std::apply(func, task->args);
     task->is_result_ready.store(true, std::memory_order_release);
