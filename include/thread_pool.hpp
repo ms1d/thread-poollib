@@ -260,7 +260,7 @@ private:
 
 	struct deque {
 		// convention: owner moves bottom, thieves steal from top
-		alignas(64) std::atomic<uint32_t> top, bottom;
+		std::atomic<uint32_t> top, bottom;
 		tp_task<func> *task_buffer[task_buffer_len];
 
 		bool push(tp_task<func> *task) {
@@ -323,7 +323,7 @@ private:
 	deque deques[worker_buffer_len];
 
 	mpmc<tp_task<func>, task_buffer_len, pool_type::vyukov_idle> induction_buffer;
-	alignas(64) std::atomic<uint32_t> induction_epoch;
+	std::atomic<uint32_t> induction_epoch;
 
 	std::thread workers[worker_buffer_len];
 	std::atomic<bool> stop;

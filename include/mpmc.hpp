@@ -24,7 +24,7 @@ struct mpmc;
 
 template<class obj, uint32_t len>
 struct mpmc<obj, len, pool_type::mutex> {
-	alignas(64) uint32_t head, tail;
+	uint32_t head, tail;
 	obj *buffer[len];
 	std::mutex mtx;
 	std::condition_variable cv_not_empty, cv_not_full;
@@ -116,14 +116,14 @@ struct mpmc<obj, len, pool_type::mutex> {
 template<class obj, uint32_t len, pool_type type>
 requires(type == pool_type::vyukov_spin || type == pool_type::vyukov_idle)
 struct mpmc<obj, len, type> {
-	struct alignas(64) slot {
+	struct slot {
 		obj *object = nullptr;
 		std::atomic<uint32_t> seq_num = 0;
 	};
 
 	slot object_buffer[len];
 
-	alignas(64) std::atomic<uint32_t> head, tail;
+	std::atomic<uint32_t> head, tail;
 	std::atomic<bool> stop;
 
 	void shutdown() {
