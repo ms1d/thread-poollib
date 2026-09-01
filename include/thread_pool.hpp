@@ -43,6 +43,12 @@ struct tp_task<func> {
 #ifndef NDEBUG
 	std::atomic_flag is_executing = ATOMIC_FLAG_INIT;
 #endif
+
+	void reset_flag() {
+#ifndef NDEBUG
+		is_executing.clear(std::memory_order_release);
+#endif
+	}
 	
 	tp_task() = default;
 	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
