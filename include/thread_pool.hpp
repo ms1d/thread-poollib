@@ -254,21 +254,22 @@ private:
 		}
 
 		tp_task<func> *pop() {
-			for(;;) {
-				auto top_local = top.load(std::memory_order_relaxed),
-					 bottom_local = bottom.load(std::memory_order_relaxed);
+			auto bottom_local = bottom.fetch_sub(1, std::memory_order_relaxed) - 1;
+			auto top_local = top.load(std::memory_order_acquire);
 
-				if (top_local == bottom_local) return nullptr;
+			if (top_local <= bottom_local) {
+				auto task = task_buffer[bottom_local % task_buffer_len];
 
-				if (top_local + 1 == bottom_local) {
-					if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) return nullptr;
-					return task_buffer[top_local % task_buffer_len];
-
-				} else {
-					bottom.fetch_sub(1, std::memory_order_relaxed);
-					return task_buffer[(bottom_local - 1) % task_buffer_len];
+				if (top_local == bottom_local) {
+					if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) task = nullptr;
+					bottom.store(bottom_local + 1, std::memory_order_relaxed);
 				}
+
+				return task;
 			}
+
+			bottom.fetch_add(1, std::memory_order_relaxed);
+			return nullptr;
 		}
 
 		tp_task<func> *steal() {
