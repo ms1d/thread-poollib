@@ -20,7 +20,9 @@ struct tp_task<func> {
     R result;          // Var to store the result of the task
     std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
     std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
+#ifndef NDEBUG
 	std::atomic_flag executing = ATOMIC_FLAG_INIT;
+#endif
 
 	tp_task() = default;
 	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
