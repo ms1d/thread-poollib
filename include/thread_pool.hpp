@@ -257,7 +257,7 @@ private:
 			auto bottom_local = bottom.fetch_sub(1, std::memory_order_relaxed) - 1;
 			auto top_local = top.load(std::memory_order_acquire);
 
-			if ((int)(bottom_local - top_local) > 0) {
+			if ((int)(bottom_local - top_local) >= 0) {
 				auto task = task_buffer[bottom_local % task_buffer_len];
 
 				if (top_local == bottom_local) {
