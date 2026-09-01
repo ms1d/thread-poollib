@@ -178,8 +178,7 @@ public:
 
 	bool submit(tp_task<func> *task) {
 		if (curr_thread.is_worker(this)) {
-			deque *q = (deque*)curr_thread.deque_ptr;
-			auto res = q->push(task);
+			auto res = static_cast<deque*>(curr_thread.deque_ptr)->push(task);
 			if (res) {
 				induction_epoch.fetch_add(1, std::memory_order_relaxed);
 				induction_epoch.notify_one();
@@ -198,8 +197,7 @@ public:
 
 	bool try_submit(tp_task<func> *task) {
 		if (curr_thread.is_worker(this)) {
-			deque *q = (deque*)curr_thread.deque_ptr;
-			auto res = q->push(task);
+			auto res = static_cast<deque*>(curr_thread.deque_ptr)->push(task);
 			if (res) {
 				induction_epoch.fetch_add(1, std::memory_order_relaxed);
 				induction_epoch.notify_one();
@@ -219,11 +217,12 @@ public:
 	bool claim() {
 		tp_task<func> *task = nullptr;
 
-		if (curr_thread.is_worker(this) && (task = ((deque*)curr_thread.deque_ptr)->pop()) != nullptr) {
+		if (curr_thread.is_worker(this) && (task = (static_cast<deque*>(curr_thread.deque_ptr))->pop()) != nullptr) {
 			return execute(task);
 		}
 
 		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+			if (deques + i == curr_thread.deque_ptr) continue;
 			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
@@ -241,10 +240,11 @@ public:
 	bool try_claim() {
 		tp_task<func> *task = nullptr;
 
-		if (curr_thread.is_worker(this) && (task = ((deque*)curr_thread.deque_ptr)->pop()) != nullptr)
+		if (curr_thread.is_worker(this) && (task = (static_cast<deque*>(curr_thread.deque_ptr))->pop()) != nullptr)
 			return execute(task);
 
 		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+			if (deques + i == curr_thread.deque_ptr) continue;
 			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
@@ -273,33 +273,40 @@ private:
 		}
 
 		tp_task<func> *pop() {
-			auto bottom_local = bottom.fetch_sub(1, std::memory_order_relaxed) - 1;
+			auto bottom_local = bottom.load(std::memory_order_relaxed);
+			bottom_local--;
+			bottom.store(bottom_local, std::memory_order_relaxed);
+
+			std::atomic_thread_fence(std::memory_order_seq_cst);
+
 			auto top_local = top.load(std::memory_order_acquire);
 
-			if ((int)(bottom_local - top_local) >= 0) {
-				auto task = task_buffer[bottom_local % task_buffer_len];
-
-				if (top_local == bottom_local) {
-					if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) task = nullptr;
-					bottom.store(bottom_local + 1, std::memory_order_relaxed);
-				}
-
-				return task;
+			if (static_cast<int32_t>(bottom_local - top_local) < 0) {
+				bottom.store(bottom_local + 1, std::memory_order_relaxed);
+				return nullptr;
 			}
 
-			bottom.fetch_add(1, std::memory_order_relaxed);
+			auto task = task_buffer[bottom_local % task_buffer_len];
+
+			if (top_local == bottom_local) {
+                if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) task = nullptr;
+                bottom.store(bottom_local + 1, std::memory_order_relaxed);
+            }
+				return task;
+
 			return nullptr;
 		}
 
 		tp_task<func> *steal() {
-			auto top_local = top.load(std::memory_order_acquire),
-				 bottom_local = bottom.load(std::memory_order_relaxed);
+			auto top_local = top.load(std::memory_order_acquire);
+			std::atomic_thread_fence(std::memory_order_seq_cst);
+			auto bottom_local = bottom.load(std::memory_order_acquire);
 
-			if (top_local == bottom_local) return nullptr;
+			if (static_cast<int32_t>(bottom_local - top_local) <= 0) return nullptr;
 
 			auto task = task_buffer[top_local % task_buffer_len];
 
-			if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+			if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
 				return nullptr;
 			}
 
@@ -335,4 +342,5 @@ private:
 	}
 
 };
+
 
