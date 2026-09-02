@@ -182,14 +182,16 @@ does not spuriously throw on subsequent executions.
 - Thread and Task buffers are statically sized at compile time
 
 - YOU, the caller, are **responsible** for ensuring that task objects
-passed in **remain alive** while workers compute them.
+passed in **remain alive** while workers compute them
 
 - If using this pool in a recursive context, it is recommended to
-heap allocate tasks. Stack use after returns can be caused by stack re-use.
+heap allocate tasks. Stack use after returns can be caused by stack re-use
 
 - Dynamically sized buffers and worker pools are **not** supported, but
-may be added in a future patch.
+may be added in a future patch
 
-- Tasks **cannot** be cancelled.
+- Tasks **cannot** be cancelled
 
-- Exceptions thrown by tasks are not handled, which may terminate worker threads.
+- Exceptions thrown by tasks are not handled, which may terminate worker threads
+
+- Memory ordering has been tested for x86 and not other platforms with weaker guarantees
