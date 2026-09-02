@@ -268,7 +268,7 @@ private:
 				 bottom_local = bottom.load(std::memory_order_relaxed);
 			if (bottom_local - top_local == task_buffer_len) return false;
 			task_buffer[bottom_local % task_buffer_len] = task;
-			bottom.store(bottom_local + 1, std::memory_order_release);
+			bottom.store(bottom_local + 1, std::memory_order_release); // release write to thieves
 			return true;
 		}
 
@@ -277,9 +277,13 @@ private:
 			bottom_local--;
 			bottom.store(bottom_local, std::memory_order_relaxed);
 
+			// This thread fence was used in the original Chase-Lev paper
+			// It forces top_local to be newer than bottom_local
+			// This prevents owners from optimistically decrementing
+			// bottom when they should instead be CASing top
 			std::atomic_thread_fence(std::memory_order_seq_cst);
 
-			auto top_local = top.load(std::memory_order_acquire);
+			auto top_local = top.load(std::memory_order_relaxed);
 
 			if (static_cast<int32_t>(bottom_local - top_local) < 0) {
 				bottom.store(bottom_local + 1, std::memory_order_relaxed);
@@ -289,7 +293,7 @@ private:
 			auto task = task_buffer[bottom_local % task_buffer_len];
 
 			if (top_local == bottom_local) {
-                if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) task = nullptr;
+                if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) task = nullptr;
                 bottom.store(bottom_local + 1, std::memory_order_relaxed);
             }
 				return task;
@@ -298,15 +302,14 @@ private:
 		}
 
 		tp_task<func> *steal() {
-			auto top_local = top.load(std::memory_order_acquire);
-			std::atomic_thread_fence(std::memory_order_seq_cst);
-			auto bottom_local = bottom.load(std::memory_order_acquire);
+			auto top_local = top.load(std::memory_order_relaxed);
+			auto bottom_local = bottom.load(std::memory_order_acquire); // acquire write to task_buffer from owner
 
 			if (static_cast<int32_t>(bottom_local - top_local) <= 0) return nullptr;
 
 			auto task = task_buffer[top_local % task_buffer_len];
 
-			if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
+			if (!top.compare_exchange_strong(top_local, top_local + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
 				return nullptr;
 			}
 
@@ -342,5 +345,6 @@ private:
 	}
 
 };
+
 
 
