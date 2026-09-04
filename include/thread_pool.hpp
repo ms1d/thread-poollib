@@ -93,10 +93,8 @@ class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
 public:
     // Constructor initializes the thread pool with worker threads.
     thread_pool() {
-        for (uint32_t i = 0; i < worker_buffer_len; i++)
-            worker_buffer[i] = std::thread([this] () {
-                worker_loop();
-            });
+		for (uint32_t i = 0; i < worker_buffer_len; i++)
+			worker_buffer[i] = std::thread([this, i] () { worker_loop(i); });
     }
 
     // Destructor stops all worker threads and joins them.
@@ -152,6 +150,16 @@ struct thread_info {
 	bool is_worker(void *curr_pool) { return deque_ptr != nullptr && pool_ptr == curr_pool; }
 };
 static thread_local thread_info curr_thread{};
+
+// wyrand (64-bit)
+static thread_local uint64_t state;
+
+static inline uint64_t wyrand() {
+    state += 0xa0761d6478bd642f;
+    __uint128_t t = static_cast<__uint128_t>(state) * (state ^ 0xe7037ed1a0b428db);
+    return static_cast<uint64_t>(t >> 64) ^ static_cast<uint64_t>(t);
+}
+
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
 // External submit and claim go to the induction buffer, NOT a particular worker deque
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
@@ -161,11 +169,13 @@ class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stea
 public:
 
 	thread_pool() {
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
-			workers[i] = std::thread([this, i] () {
-				worker_loop(i);
-			});
-		}
+		for (uint32_t i = 0; i < worker_buffer_len; i++)
+			worker_buffer[i] = std::thread([this, i] () { worker_loop(i); });
+	}
+
+	thread_pool(uint32_t _max_steals) : max_steals(_max_steals) {
+		for (uint32_t i = 0; i < worker_buffer_len; i++)
+			worker_buffer[i] = std::thread([this, i] () { worker_loop(i); });
 	}
 
 	~thread_pool() {
@@ -173,7 +183,7 @@ public:
 		induction_epoch.fetch_add(1, std::memory_order_relaxed);
 		induction_epoch.notify_all();
 		induction_buffer.shutdown();
-		for (uint32_t i = 0; i < worker_buffer_len; i++) workers[i].join();
+		for (uint32_t i = 0; i < worker_buffer_len; i++) worker_buffer[i].join();
 	}
 
 	bool submit(tp_task<func> *task) {
@@ -221,13 +231,10 @@ public:
 			return execute(task);
 		}
 
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
+		uint32_t start_index = wyrand();
+		for (uint32_t i = start_index; i < start_index + max_steals; i++) {
 			if (deques + i == curr_thread.deque_ptr) continue;
-			if ((task = deques[i].steal()) != nullptr) break;
-		}
-
-		if (task != nullptr) {
-			return execute(task);
+			if ((task = deques[i % worker_buffer_len].steal()) != nullptr) return execute(task);
 		}
 
 		if ((task = induction_buffer.claim()) != nullptr) {
@@ -240,17 +247,19 @@ public:
 	bool try_claim() {
 		tp_task<func> *task = nullptr;
 
-		if (curr_thread.is_worker(this) && (task = (static_cast<deque*>(curr_thread.deque_ptr))->pop()) != nullptr)
+		if (curr_thread.is_worker(this) && (task = (static_cast<deque*>(curr_thread.deque_ptr))->pop()) != nullptr) {
 			return execute(task);
-
-		for (uint32_t i = 0; i < worker_buffer_len; i++) {
-			if (deques + i == curr_thread.deque_ptr) continue;
-			if ((task = deques[i].steal()) != nullptr) break;
 		}
 
-		if (task != nullptr) return execute(task);
+		uint32_t start_index = wyrand();
+		for (uint32_t i = start_index; i < start_index + max_steals; i++) {
+			if (deques + i == curr_thread.deque_ptr) continue;
+			if ((task = deques[i % worker_buffer_len].steal()) != nullptr) return execute(task);
+		}
 
-		if ((task = induction_buffer.try_claim()) != nullptr) return execute(task);
+		if ((task = induction_buffer.try_claim()) != nullptr) {
+			return execute(task);
+		}
 
 		return false;
 	}
@@ -328,8 +337,10 @@ private:
 	mpmc<tp_task<func>, task_buffer_len, pool_type::vyukov_idle> induction_buffer;
 	std::atomic<uint32_t> induction_epoch;
 
-	std::thread workers[worker_buffer_len];
+	std::thread worker_buffer[worker_buffer_len];
 	std::atomic<bool> stop;
+
+	const uint32_t max_steals = 2;
 
 	void worker_loop(uint32_t worker_index) {
 		curr_thread.deque_ptr = deques + worker_index;
@@ -345,6 +356,3 @@ private:
 	}
 
 };
-
-
-
