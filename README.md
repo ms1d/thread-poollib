@@ -169,7 +169,8 @@ typically negligible.
 
 This function is necessary when re-using allocated memory without reconstructing
 `tp_task` objects. It clears the execution guard state, ensuring that the assertion
-does not spuriously throw on subsequent executions.
+does not spuriously throw on subsequent executions. In release builds, it is typically
+compiled away due to the presence of the `NDEBUG` flag.
 
 ## Benchmarks
 
