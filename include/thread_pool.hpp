@@ -180,9 +180,9 @@ public:
 
 	~thread_pool() {
 		stop = true;
+		induction_buffer.shutdown();
 		induction_epoch.fetch_add(1, std::memory_order_relaxed);
 		induction_epoch.notify_all();
-		induction_buffer.shutdown();
 		for (uint32_t i = 0; i < worker_buffer_len; i++) worker_buffer[i].join();
 	}
 
