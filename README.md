@@ -196,6 +196,8 @@ cache locality, or prefetching. GPU parallelisation is likely to outperform the
 CPU due to the sheer volume of computation it provides, but this is outside the
 scope of this project.
 
+> More benchmarks are planned. See issue #7
+
 <a id="notes-limitations-quirks"></a>
 
 ## Notes, Limitations & Quirks
