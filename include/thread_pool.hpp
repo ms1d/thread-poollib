@@ -94,7 +94,7 @@ public:
     // Constructor initializes the thread pool with worker threads.
     thread_pool() {
 		for (uint32_t i = 0; i < worker_buffer_len; i++)
-			worker_buffer[i] = std::thread([this, i] () { worker_loop(i); });
+			worker_buffer[i] = std::thread([this] () { worker_loop(); });
     }
 
     // Destructor stops all worker threads and joins them.
