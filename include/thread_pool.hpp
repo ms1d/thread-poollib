@@ -179,7 +179,6 @@ public:
 	}
 
 	~thread_pool() {
-		stop = true;
 		induction_buffer.shutdown();
 		induction_epoch.fetch_add(1, std::memory_order_relaxed);
 		induction_epoch.notify_all();
@@ -190,14 +189,14 @@ public:
 		if (curr_thread.is_worker(this)) {
 			auto res = static_cast<deque*>(curr_thread.deque_ptr)->push(task);
 			if (res) {
-				induction_epoch.fetch_add(1, std::memory_order_relaxed);
+				induction_epoch.fetch_add(2, std::memory_order_relaxed);
 				induction_epoch.notify_one();
 				return true;
 			}
 		}
 
 		if (induction_buffer.submit(task)) {
-			induction_epoch.fetch_add(1, std::memory_order_relaxed);
+			induction_epoch.fetch_add(2, std::memory_order_relaxed);
 			induction_epoch.notify_one();
 			return true;
 		}
@@ -209,14 +208,14 @@ public:
 		if (curr_thread.is_worker(this)) {
 			auto res = static_cast<deque*>(curr_thread.deque_ptr)->push(task);
 			if (res) {
-				induction_epoch.fetch_add(1, std::memory_order_relaxed);
+				induction_epoch.fetch_add(2, std::memory_order_relaxed);
 				induction_epoch.notify_one();
 				return true;
 			}
 		}
 
 		if (induction_buffer.try_submit(task)) {
-			induction_epoch.fetch_add(1, std::memory_order_relaxed);
+			induction_epoch.fetch_add(2, std::memory_order_relaxed);
 			induction_epoch.notify_one();
 			return true;
 		}
@@ -338,7 +337,6 @@ private:
 	std::atomic<uint32_t> induction_epoch;
 
 	std::thread worker_buffer[worker_buffer_len];
-	std::atomic<bool> stop;
 
 	const uint32_t max_steals = 2;
 
@@ -349,8 +347,8 @@ private:
 		for (;;) {
 			if (!try_claim()) {
 				auto local_epoch = induction_epoch.load(std::memory_order_relaxed);
+				if (local_epoch % 2 == 1) return;
 				induction_epoch.wait(local_epoch, std::memory_order_relaxed);
-				if (stop.load(std::memory_order_relaxed)) return;
 			}
 		}
 	}
