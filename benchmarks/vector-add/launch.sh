@@ -7,6 +7,7 @@ set -euo pipefail
 benchname="vector-add"
 
 benchmarks=(
+	single-threaded
     mutex
     vyukov-idle
     vyukov-spin
