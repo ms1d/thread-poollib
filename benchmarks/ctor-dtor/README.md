@@ -9,3 +9,10 @@ the same thread pool (e.g. in a long running process). However, for full transpa
 the total runtimes should always be shown.
 
 ## Results
+
+| Name            | Avg. Time ± S.D. (ms) |
+| --------------- | --------------------- |
+| Mutex           | 1.5 ± 0.3             |
+| Vyukov (idle)   | 1.6 ± 0.3             |
+| Vyukov (spin)   | 1.6 ± 0.3             |
+| Work-Stealing   | 1.7 ± 0.4             |
