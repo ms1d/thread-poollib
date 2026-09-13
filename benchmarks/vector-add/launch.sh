@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
+benchname="vector-add"
+
 benchmarks=(
-	single-threaded
     mutex
     vyukov-idle
     vyukov-spin
@@ -15,7 +16,7 @@ benchmarks=(
 cmds=()
 
 for bench in "${benchmarks[@]}"; do
-    cmds+=("build/benchmarks/vector-add/$bench/vector-add-$bench")
+    cmds+=("build/benchmarks/$benchname/$bench/$benchname-$bench")
 done
 
 if [ $# -eq 1 ]; then
@@ -24,3 +25,4 @@ if [ $# -eq 1 ]; then
 fi
 
 hyperfine "${cmds[@]}" --runs 10000
+
