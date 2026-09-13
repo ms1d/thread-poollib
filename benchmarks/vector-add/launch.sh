@@ -25,5 +25,5 @@ if [ $# -eq 1 ]; then
 	exit 0
 fi
 
-hyperfine "${cmds[@]}" --runs 10000
+hyperfine "${cmds[@]}" --runs 10000 -N
 
