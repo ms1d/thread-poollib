@@ -174,27 +174,7 @@ compiled away due to the presence of the `NDEBUG` flag.
 
 ## Benchmarks
 
-### Vector Addition
-
-All benchmarks were run on a Ryzen 7 8845HS (8C/16T where appropiate) with 1 million
-ints per vector.
-
-| Name            | Avg. Time ± S.D. (ms) |
-| --------------- | --------------------- |
-| Single-Threaded | 1.0 ± 0.4             |
-| Mutex           | 2.4 ± 0.4             |
-| Vyukov (idle)   | 2.5 ± 0.4             |
-| Vyukov (spin)   | 2.3 ± 0.4             |
-| Work-Stealing   | 2.2 ± 0.6             |
-
-Overall, this demonstrates that introducing concurrency through the thread pool
-implementations is ineffective for simple vector addition. The overhead of task
-scheduling and synchronisation outweighs the benefits of parallel execution for
-this regular, highly predictable workload. Thread pools may perform better on more
-irregular workloads where the CPU has greater difficulty with branch prediction,
-cache locality, or prefetching. GPU parallelisation is likely to outperform the
-CPU due to the sheer volume of computation it provides, but this is outside the
-scope of this project.
+See `benchmarks/README.md`
 
 > More benchmarks are planned. See issue #7
 
@@ -218,3 +198,5 @@ may be added in a future patch
 - Exceptions thrown by tasks are not handled, which may terminate worker threads
 
 - Memory ordering has been tested for x86 and not other platforms with weaker guarantees
+
+- Functions must have arguments (not planning to support those without arguments)
