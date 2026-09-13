@@ -99,7 +99,7 @@ public:
 
     // Destructor stops all worker threads and joins them.
     ~thread_pool() {
-		task_buffer.shutdown();
+		while (exited != worker_buffer_len) task_buffer.shutdown();
 
         for (uint32_t i = 0; i < worker_buffer_len; i++)
             worker_buffer[i].join();
@@ -134,11 +134,13 @@ public:
 
 private:
     std::thread worker_buffer[worker_buffer_len];
+	std::atomic<uint32_t> exited{0};
 	mpmc<tp_task<func>, task_buffer_len, type> task_buffer;
 
 
     void worker_loop() {
         while (claim());
+		exited++;
     }
 };
 
@@ -182,6 +184,7 @@ public:
 		induction_buffer.shutdown();
 		induction_epoch.fetch_add(1, std::memory_order_relaxed);
 		induction_epoch.notify_all();
+		while (exited != worker_buffer_len) induction_buffer.shutdown();
 		for (uint32_t i = 0; i < worker_buffer_len; i++) worker_buffer[i].join();
 	}
 
@@ -273,7 +276,7 @@ private:
 
 	struct deque {
 		// convention: owner moves bottom, thieves steal from top
-		std::atomic<uint32_t> top, bottom;
+		std::atomic<uint32_t> top{0}, bottom{0};
 		tp_task<func> *task_buffer[task_buffer_len];
 
 		bool push(tp_task<func> *task) {
@@ -339,7 +342,7 @@ private:
 	deque deques[worker_buffer_len];
 
 	mpmc<tp_task<func>, task_buffer_len, pool_type::vyukov_idle> induction_buffer;
-	std::atomic<uint32_t> induction_epoch;
+	std::atomic<uint32_t> induction_epoch{0}, exited{0};
 
 	std::thread worker_buffer[worker_buffer_len];
 
@@ -352,10 +355,12 @@ private:
 		for (;;) {
 			if (!try_claim()) {
 				auto local_epoch = induction_epoch.load(std::memory_order_relaxed);
-				if (local_epoch % 2 == 1) return;
+				if (local_epoch % 2 == 1) break;
 				induction_epoch.wait(local_epoch, std::memory_order_relaxed);
 			}
 		}
+
+		exited++;
 	}
 
 };
