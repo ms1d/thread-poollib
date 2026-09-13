@@ -17,9 +17,9 @@ struct tp_task;
 template<typename R, typename... arg_Ts, R (*func)(arg_Ts...)>
 requires(!std::is_void_v<R>)
 struct tp_task<func> {
-    R result;          // Var to store the result of the task
-    std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
-    std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
+    R result;
+    std::atomic<bool> is_result_ready{false};
+    std::tuple<arg_Ts...> args;
 #ifndef NDEBUG
 	std::atomic_flag is_executing = ATOMIC_FLAG_INIT;
 #endif
@@ -38,8 +38,8 @@ struct tp_task<func> {
 // Specialization for tasks that return void.
 template<typename... arg_Ts, void (*func)(arg_Ts...)>
 struct tp_task<func> {
-    std::atomic<bool> is_result_ready{false};  // Atomic boolean flag indicating if the result is ready
-    std::tuple<arg_Ts...> args;  // Tuple containing the arguments for the task
+    std::atomic<bool> is_result_ready{false};
+    std::tuple<arg_Ts...> args;
 #ifndef NDEBUG
 	std::atomic_flag is_executing = ATOMIC_FLAG_INIT;
 #endif
@@ -185,6 +185,8 @@ public:
 		for (uint32_t i = 0; i < worker_buffer_len; i++) worker_buffer[i].join();
 	}
 
+	// Blocking method that submits a task to the thread pool, and waits if it is full.
+	// Callers are responsible for keeping `task` alive. Stack allocating is not recommended.
 	bool submit(tp_task<func> *task) {
 		if (curr_thread.is_worker(this)) {
 			auto res = static_cast<deque*>(curr_thread.deque_ptr)->push(task);
@@ -204,6 +206,7 @@ public:
 		return false;
 	}
 
+    // One-shot version of `submit()`. Returns false instead of waiting.
 	bool try_submit(tp_task<func> *task) {
 		if (curr_thread.is_worker(this)) {
 			auto res = static_cast<deque*>(curr_thread.deque_ptr)->push(task);
@@ -223,6 +226,7 @@ public:
 		return false;
 	}
 
+    // Claims a task from the thread pool and executes it.
 	bool claim() {
 		tp_task<func> *task = nullptr;
 
@@ -243,6 +247,7 @@ public:
 		return false;
 	}
 
+    // One-shot version of `claim()`. Returns false instead of waiting.
 	bool try_claim() {
 		tp_task<func> *task = nullptr;
 
