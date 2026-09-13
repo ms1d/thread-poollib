@@ -21,9 +21,8 @@ for bench in "${benchmarks[@]}"; do
 done
 
 if [ $# -eq 1 ]; then
-	hyperfine "${cmds[@]}" --runs $1
+	hyperfine "${cmds[@]}" --runs $1 -N --warmup 500
 	exit 0
 fi
 
-hyperfine "${cmds[@]}" --runs 10000 -N
-
+hyperfine "${cmds[@]}" --runs 10000 -N --warmup 500
