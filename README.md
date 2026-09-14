@@ -116,6 +116,7 @@ thread_pool<foo, THREADS, SLOTS> bar{}; // Defaults type to pool_type::mutex
 ```
 
 Avoid constantly constructing and destroying pools as it creates and destroys threads.
+More info of this overhead can be found in `benchmarks/ctor-dtor/README.md`
 
 To queue tasks:
 
