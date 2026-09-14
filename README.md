@@ -37,8 +37,7 @@ duplicate task execution.
 
 - `vyukov_idle` replaces sequence number waiting spins with std::atomic::wait()
 
-- `work_stealing` uses a decentralized deque model + shared induction buffer for
-external submissions.
+- `work_stealing` uses a decentralized deque model + shared induction buffer
 
 ## Architecture Diagrams
 
@@ -93,6 +92,96 @@ E --> F{seq == N+1?}
 F --> |no| G[idle/spin]
 G --> F
 F --> |yes| H[read task, seq_num = N + buffer_size]
+```
+
+### Work-stealing variant
+
+The induction buffer is implemented as the Vyukov MPMC queue described above.
+
+#### Submission workflow
+
+```mermaid
+flowchart LR
+A[submit] --> B{is thread a worker of this pool?}
+B --> |yes| C[try push to own deque]
+B --> |no| F[try submit to induction buffer]
+C --> D{operation success?}
+D --> |yes| E[induction epoch += 2 & notify one, return true]
+D --> |no| F
+F --> G{operation success?}
+G --> |yes| E
+G --> |no| H[return false]
+```
+
+##### Note on induction epoch
+
+Submission increments it by 2 to reserve odd induction epoch values for the pool
+shutdown state. If an idle worker observes there is no work to be done **AND** the
+epoch has an **odd** value, it will exit from `worker_loop`, ensuring graceful shutdown.
+
+#### Consumption workflow
+
+```mermaid
+flowchart LR
+A[claim] --> B{is thread a worker of this pool?}
+
+B --> |yes| C[try pop from own deque]
+B --> |no| G[try steal from other deques]
+
+C --> D{operation success?}
+D --> |yes| E[execute task, return true]
+D --> |no| G
+
+G --> H{operation success?}
+H --> |yes| E
+H --> |no| F[try claim from induction buffer]
+
+F --> I{operation success?}
+I --> |yes| E
+I --> |no| J[return false]
+```
+
+#### Deque push
+
+The deque follows the Chase-Lev convention: the owner pushes/pops from `bottom`,
+while thieves steal from `top`. Only the owner modifies `bottom`.
+
+```mermaid
+flowchart LR
+A[owner push] --> B[read top and bottom]
+B --> C{deque full?}
+C --> |yes| D[return false]
+C --> |no| E[write task at bottom index]
+E --> F[bottom += 1 with release ordering]
+F --> G[return true]
+```
+
+#### Deque pop/steal
+
+```mermaid
+flowchart LR
+A[owner pop] --> B[bottom -= 1]
+B --> C[seq_cst fence]
+C --> D[read top]
+D --> E{bottom < top?}
+E --> |yes| F[restore bottom, return false]
+E --> |no| G[read task from bottom index]
+G --> H{last task in deque?}
+H --> |no| I[return task]
+H --> |yes| J[CAS top to claim task]
+J --> K{CAS success?}
+K --> |yes| I
+K --> |no| L[return false]
+
+M[thief steal] --> N[read top]
+N --> O[read bottom]
+O --> P{deque empty?}
+P --> |yes| Q[return false]
+P --> |no| R[read task from top index]
+R --> S[CAS top += 1]
+S --> T{CAS success?}
+T --> |yes| U[return task]
+T --> |no| Q
 ```
 
 ## Usage
