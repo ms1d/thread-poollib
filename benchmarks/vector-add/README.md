@@ -35,10 +35,10 @@ The adjusted times are as follows:
 | Name            | Avg. Time ± S.D. (ms) |
 | --------------- | --------------------- |
 | Single-Threaded | 1.0 ± 0.4             |
-| Mutex           | 0.9 ± 0.4             |
-| Vyukov (idle)   | 0.9 ± 0.4             |
-| Vyukov (spin)   | 0.7 ± 0.4             |
-| Work-Stealing   | 0.5 ± 0.6             |
+| Mutex           | 0.9 ± 0.7             |
+| Vyukov (idle)   | 0.9 ± 0.7             |
+| Vyukov (spin)   | 0.7 ± 0.7             |
+| Work-Stealing   | 0.5 ± 1.0             |
 
 ## Conclusions
 
