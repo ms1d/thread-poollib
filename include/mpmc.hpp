@@ -271,6 +271,7 @@ struct mpmc<obj, len, type> {
 		s->seq_num.store(seq_num_local + len - 1, std::memory_order_release);
 		if constexpr (type == pool_type::vyukov_idle) s->seq_num.notify_all();
 
+		if (stop.load(std::memory_order_relaxed)) [[unlikely]] return nullptr;
 		return object;
 	}
 };
