@@ -63,11 +63,11 @@ for tasks in "${num_tasks[@]}"; do
 			cp benchmarks/ctor-dtor/launch.sh build/benchmarks/ctor-dtor
 			cp benchmarks/vector-add/launch.sh build/benchmarks/vector-add
 
-			echo "THREAD POOL CTOR-DTOR BASELINE"
+			echo "THREAD POOL CTOR-DTOR BASELINE" >> dump.txt
 
 			build/benchmarks/ctor-dtor/launch.sh 100 >> dump.txt
 
-			echo "VECTOR ADD"
+			echo "VECTOR ADD" >> dump.txt
 
 			build/benchmarks/vector-add/launch.sh 100 >> dump.txt
 		done
