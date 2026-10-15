@@ -61,11 +61,11 @@ bool execute(tp_task<func> *task) {
 	assert(!task->is_executing.test_and_set(std::memory_order_acquire));
     if constexpr (!std::is_void_v<R>) task->result = std::apply(func, task->args);
     else std::apply(func, task->args);
-    task->is_result_ready.store(true, std::memory_order_release);
-    task->is_result_ready.notify_one();
 #ifndef NDEBUG
 	task->is_executing.clear(std::memory_order_release);
 #endif
+    task->is_result_ready.store(true, std::memory_order_release);
+    task->is_result_ready.notify_one();
 	return true;
 }
 
