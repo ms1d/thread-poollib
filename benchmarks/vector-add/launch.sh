@@ -12,6 +12,7 @@ benchmarks=(
     vyukov-idle
     vyukov-spin
     work-stealing
+	manual
 )
 
 cmds=()
@@ -20,9 +21,12 @@ for bench in "${benchmarks[@]}"; do
     cmds+=("build/benchmarks/$benchname/$bench/$benchname-$bench")
 done
 
+runs=10000
+
 if [ $# -eq 1 ]; then
-	hyperfine "${cmds[@]}" --runs $1 -N --warmup 500
-	exit 0
+	runs=$1
 fi
 
-hyperfine "${cmds[@]}" --runs 10000 -N --warmup 500
+hyperfine "${cmds[@]}" --runs $runs -N --warmup $(($runs / 20)) --export-csv /tmp/test.csv > /dev/null
+cat /tmp/test.csv
+rm -f /tmp/test.csv

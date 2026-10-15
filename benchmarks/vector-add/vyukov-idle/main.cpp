@@ -1,14 +1,23 @@
 #include "thread_pool.hpp"
 
-#define NUM_TASKS 8192
-#define NUM_THREADS 16
-#define VEC_SIZE 1'000'000
+#ifndef NUM_TASKS
+#define NUM_TASKS 128*4
+#endif
+
+#ifndef NUM_THREADS
+#define NUM_THREADS 4
+#endif
+
+#ifndef VEC_SIZE
+#define VEC_SIZE 10'000'000
+#endif
+
 #define ELES_PER_THREAD (VEC_SIZE / NUM_THREADS)
 
 static_assert(VEC_SIZE % NUM_THREADS == 0);
 
 void calculate(const int *vec1, const int *vec2, int *vec3, const int len) {
-	for (int i = 0; i < len; i++) *vec3 = vec1[i] + vec2[i];
+	for (int i = 0; i < len; i++) vec3[i] = vec1[i] + vec2[i];
 }
 
 int main() {
@@ -36,6 +45,10 @@ int main() {
 		tasks[i]->is_result_ready.wait(false);
         delete tasks[i];
     }
+
+	int sum = 0;
+	for (int i = 0; i < VEC_SIZE; i++) sum += vec3[i];
+	std::printf("%d\n", sum);
 
 	delete[] vec1;
     delete[] vec2;
