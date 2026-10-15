@@ -73,7 +73,7 @@ def parse_file(input_path):
                 }
                 continue
 
-            if line == "THREAD POOL CTOR-DTOR BASELINE":
+            if line == "CTOR DTOR":
                 section = "ctor_dtor"
                 continue
 
