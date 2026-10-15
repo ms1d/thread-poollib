@@ -6,7 +6,8 @@
 
 set -euo pipefail
 
-cat include/mpmc.hpp > /dev/null | exit -1
+cat include/mpmc.hpp > /dev/null || exit -1
+rm -f dump.txt
 
 num_threads=(
 	1
