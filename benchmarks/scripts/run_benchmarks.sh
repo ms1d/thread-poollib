@@ -8,6 +8,7 @@ set -euo pipefail
 
 cat include/mpmc.hpp > /dev/null || exit -1
 rm -f dump.txt
+touch dump.txt
 
 num_threads=(
 	1
@@ -44,7 +45,7 @@ for tasks in "${num_tasks[@]}"; do
 	for vec in "${vec_sizes[@]}"; do
 		for threads in "${num_threads[@]}"; do
 
-			printf "\nNUM_THREADS: %d NUM_TASKS: %d VEC_SIZE: %d\n" "$threads" "$tasks" "$vec" > dump.txt
+			printf "\nNUM_THREADS: %d NUM_TASKS: %d VEC_SIZE: %d\n" "$threads" "$tasks" "$vec" >> dump.txt
 
 			rm -rf build
 
@@ -64,11 +65,11 @@ for tasks in "${num_tasks[@]}"; do
 
 			echo "THREAD POOL CTOR-DTOR BASELINE"
 
-			build/benchmarks/ctor-dtor/launch.sh 100 > dump.txt
+			build/benchmarks/ctor-dtor/launch.sh 100 >> dump.txt
 
 			echo "VECTOR ADD"
 
-			build/benchmarks/vector-add/launch.sh 100 > dump.txt
+			build/benchmarks/vector-add/launch.sh 100 >> dump.txt
 		done
 	done
 done
