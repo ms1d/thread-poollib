@@ -147,7 +147,7 @@ struct mpmc<obj, len, type> {
 	// Callers are responsible for keeping `object` alive. Stack allocating is not recommended.
 	bool submit(obj *object) {
 		for (;;) {
-			if (stop.load(std::memory_order_relaxed)) return false;
+			if (stop.load(std::memory_order_relaxed)) [[unlikely]] return false;
 
 			auto head_local = head.load(std::memory_order_relaxed),
 				 tail_local = tail.load(std::memory_order_relaxed);
@@ -166,7 +166,7 @@ struct mpmc<obj, len, type> {
 			slot *s = &object_buffer[tail_local % len];
 			uint32_t seq_num_local;
 			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
-				if (stop.load(std::memory_order_relaxed)) return false;
+				if (stop.load(std::memory_order_relaxed)) [[unlikely]] return false;
 				if constexpr (type == pool_type::vyukov_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 			}
 
@@ -180,7 +180,7 @@ struct mpmc<obj, len, type> {
 	
     // One-shot version of `submit()`. Returns false instead of waiting if pool is full.
 	bool try_submit(obj *object) { 
-		if (stop.load(std::memory_order_relaxed)) return false;
+		if (stop.load(std::memory_order_relaxed)) [[unlikely]] return false;
 		
 		auto head_local = head.load(std::memory_order_relaxed),
 			 tail_local = tail.load(std::memory_order_relaxed);
@@ -197,7 +197,7 @@ struct mpmc<obj, len, type> {
 		slot *s = &object_buffer[tail_local % len];
 		uint32_t seq_num_local;
 		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire))  != tail_local) {
-			if (stop.load(std::memory_order_relaxed)) return false;
+			if (stop.load(std::memory_order_relaxed)) [[unlikely]] return false;
 			if constexpr (type == pool_type::vyukov_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 		}
 
@@ -222,7 +222,7 @@ struct mpmc<obj, len, type> {
 
 			if (tail_local == head_local) {
 				tail.wait(tail_local, std::memory_order_relaxed);
-				if (stop.load(std::memory_order_relaxed)) return nullptr;
+				if (stop.load(std::memory_order_relaxed)) [[unlikely]] return nullptr;
 				continue;
 			}
 
@@ -232,7 +232,7 @@ struct mpmc<obj, len, type> {
 			uint32_t seq_num_local;
 
 			while ((seq_num_local = s->seq_num.load(std::memory_order_acquire)) != head_local + 1) {
-				if (stop.load(std::memory_order_relaxed)) return nullptr;
+				if (stop.load(std::memory_order_relaxed)) [[unlikely]] return nullptr;
 				if constexpr (type == pool_type::vyukov_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 			}
 
@@ -240,6 +240,7 @@ struct mpmc<obj, len, type> {
 			s->seq_num.store(seq_num_local + len - 1, std::memory_order_release);
 			if constexpr (type == pool_type::vyukov_idle) s->seq_num.notify_all();
 
+			if (stop.load(std::memory_order_relaxed)) [[unlikely]] return nullptr;
 			return object;
 		}
 	}
@@ -262,7 +263,7 @@ struct mpmc<obj, len, type> {
 		uint32_t seq_num_local;
 
 		while ((seq_num_local = s->seq_num.load(std::memory_order_acquire)) != head_local + 1) {
-			if (stop.load(std::memory_order_relaxed)) return nullptr;
+			if (stop.load(std::memory_order_relaxed)) [[unlikely]] return nullptr;
 			if constexpr (type == pool_type::vyukov_idle) s->seq_num.wait(seq_num_local, std::memory_order_relaxed);
 		}
 
