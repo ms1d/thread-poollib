@@ -99,7 +99,9 @@ public:
 
     // Destructor stops all worker threads and joins them.
     ~thread_pool() {
-		while (exited != worker_buffer_len) task_buffer.shutdown();
+		do {
+			task_buffer.shutdown();
+		} while (exited != worker_buffer_len);
 
         for (uint32_t i = 0; i < worker_buffer_len; i++)
             worker_buffer[i].join();
