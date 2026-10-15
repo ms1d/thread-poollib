@@ -24,7 +24,7 @@ struct mpmc;
 
 template<class obj, uint32_t len>
 struct mpmc<obj, len, pool_type::mutex> {
-	uint32_t head, tail;
+	uint32_t head{0}, tail{0};
 	obj *buffer[len];
 	std::mutex mtx;
 	std::condition_variable cv_not_empty, cv_not_full;
@@ -123,7 +123,7 @@ struct mpmc<obj, len, type> {
 
 	slot object_buffer[len];
 
-	std::atomic<uint32_t> head, tail;
+	std::atomic<uint32_t> head{0}, tail{0};
 	std::atomic<bool> stop;
 
 	void shutdown() {
