@@ -86,10 +86,10 @@ cmake --build build || exit 4
 
 # Generate artifacts
 
-python benchmarks/scripts/parse_benchmarks.py dump.txt -o benchmarks/results
+python3 benchmarks/scripts/parse_benchmarks.py dump.txt -o benchmarks/results
 rm dump.txt
 mv benchmarks/results/ctor_dtor.csv benchmarks/ctor-dtor
 mv benchmarks/results/vector_add.csv benchmarks/vector-add
-python benchmarks/scripts/plot_ctor_dtor.py benchmarks/ctor-dtor/ctor_dtor.csv -o benchmarks/ctor-dtor
-python benchmarks/scripts/plot_vector_add.py benchmarks/vector-add/vector_add.csv -o benchmarks/vector-add
+python3 benchmarks/scripts/plot_ctor_dtor.py benchmarks/ctor-dtor/ctor_dtor.csv -o benchmarks/ctor-dtor
+python3 benchmarks/scripts/plot_vector_add.py benchmarks/vector-add/vector_add.csv -o benchmarks/vector-add
 rm -r benchmarks/results
