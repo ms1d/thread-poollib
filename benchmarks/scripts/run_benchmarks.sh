@@ -38,7 +38,7 @@ vec_sizes=(
 	200000000
 )
 
-# Likely the least important for these specific benchmarks - keeping it at 4
+# Likely the least important for these specific benchmarks - keeping it at 64
 num_tasks=(
 	#4
 	#16
