@@ -21,21 +21,21 @@ num_threads=(
 	1
 	2
 	4
-	#8
-	#16
-	#32
+	8
+	16
+	32
 )
 
 vec_sizes=(
 	992
 	10016
 	100000
-	#1000000
-	#10000000
-	#25000000
-	#50000000
-	#100000000
-	#200000000
+	1000000
+	10000000
+	25000000
+	50000000
+	100000000
+	200000000
 )
 
 # Likely the least important for these specific benchmarks - keeping it at 64
@@ -94,9 +94,9 @@ cmake --build build || exit 4
 
 # Generate artifacts
 
-python3 benchmarks/scripts/parse_benchmarks.py dump.txt -o benchmarks/results #&&
-	#mv benchmarks/results/ctor_dtor.csv benchmarks/ctor-dtor && mv benchmarks/results/vector_add.csv benchmarks/vector-add &&
-	#python3 benchmarks/scripts/plot_ctor_dtor.py benchmarks/ctor-dtor/ctor_dtor.csv -o benchmarks/ctor-dtor &&
-	#python3 benchmarks/scripts/plot_vector_add.py benchmarks/vector-add/vector_add.csv -o benchmarks/vector-add &&
-	#rm -r benchmarks/results &&
-	#rm dump.txt
+python3 benchmarks/scripts/parse_benchmarks.py dump.txt -o benchmarks/results &&
+	mv benchmarks/results/ctor_dtor.csv benchmarks/ctor-dtor && mv benchmarks/results/vector_add.csv benchmarks/vector-add &&
+	python3 benchmarks/scripts/plot_ctor_dtor.py benchmarks/ctor-dtor/ctor_dtor.csv -o benchmarks/ctor-dtor &&
+	python3 benchmarks/scripts/plot_vector_add.py benchmarks/vector-add/vector_add.csv -o benchmarks/vector-add &&
+	rm -r benchmarks/results &&
+	rm dump.txt
