@@ -25,7 +25,4 @@ if [ $# -eq 1 ]; then
 	runs=$1
 fi
 
-hyperfine "${cmds[@]}" --runs $runs -N --warmup $(($runs / 20)) --metrics all --export-csv /tmp/tmp.csv --export-json /tmp/tmp.json > /dev/null
-cat /tmp/tmp.csv
-cat /tmp/tmp.json
-rm -f /tmp/tmp.csv /tmp/tmp.json
+hyperfine "${cmds[@]}" --runs $runs -N --warmup $(($runs / 20)) --metrics all --export-csv /tmp/tmp.csv --export-json /tmp/tmp.json

@@ -56,6 +56,7 @@ for tasks in "${num_tasks[@]}"; do
 
 			rm -rf build
 
+			printf "Compiling (num threads = %d, num tasks = %d, vec size = %d)...\n" "$threads" "$tasks" "$vec"
 			cmake \
 				-S . \
 				-B build \
@@ -71,12 +72,18 @@ for tasks in "${num_tasks[@]}"; do
 			cp benchmarks/vector-add/launch.sh build/benchmarks/vector-add
 
 			echo "CTOR DTOR" >> dump.txt
+			rm -f /tmp/tmp.json /tmp/tmp.csv
 
-			build/benchmarks/ctor-dtor/launch.sh $runs >> dump.txt
+			build/benchmarks/ctor-dtor/launch.sh $runs
+			cat /tmp/tmp.csv >> dump.txt
+			cat /tmp/tmp.json >> dump.txt
 
 			echo "VECTOR ADD" >> dump.txt
+			rm -f /tmp/tmp.json /tmp/tmp.csv
 
-			build/benchmarks/vector-add/launch.sh $runs >> dump.txt
+			build/benchmarks/vector-add/launch.sh $runs
+			cat /tmp/tmp.csv >> dump.txt
+			cat /tmp/tmp.json >> dump.txt
 		done
 	done
 done
