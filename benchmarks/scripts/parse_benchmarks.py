@@ -11,6 +11,8 @@
 import argparse
 import csv
 import re
+import json
+import math
 from pathlib import Path
 
 CONFIG_RE = re.compile(
@@ -26,6 +28,7 @@ TIME_FIELDS = [
     "time_wall_clock_median",
     "time_wall_clock_min",
     "time_wall_clock_max",
+    "time_wall_clock_iqr",
 ]
 
 MEMORY_FIELDS = [
@@ -35,6 +38,7 @@ MEMORY_FIELDS = [
     "memory_peak_resident_median",
     "memory_peak_resident_min",
     "memory_peak_resident_max",
+    "memory_peak_resident_iqr",
 ]
 
 OUTPUT_FIELDS = [
@@ -94,7 +98,7 @@ def parse_file(input_path):
             except csv.Error:
                 continue
 
-            if len(row) != 13 or not row[0].startswith("build/"):
+            if len(row) < 31 or not row[0].startswith("build/"):
                 continue
 
             executable = row[0].rstrip("/").split("/")[-1]
@@ -111,6 +115,68 @@ def parse_file(input_path):
                 record[field] = value
 
             results[section].append(record)
+
+    return results
+
+
+def percentile(values, p):
+    values = sorted(values)
+
+    if not values:
+        raise ValueError("Cannot calculate percentile of empty data")
+
+    index = (len(values) - 1) * p
+    lower = math.floor(index)
+    upper = math.ceil(index)
+
+    if lower == upper:
+        return values[lower]
+
+    fraction = index - lower
+    return values[lower] * (1 - fraction) + values[upper] * fraction
+
+
+def calculate_iqr(values):
+    return percentile(values, 0.75) - percentile(values, 0.25)
+
+
+def parse_json_measurements(input_path):
+    text = input_path.read_text(encoding="utf-8-sig")
+    decoder = json.JSONDecoder()
+
+    # Find every top-level Hyperfine JSON object in the log.
+    json_starts = re.finditer(
+        r'(?m)^\{\s*"schema_version"\s*:',
+        text,
+    )
+
+    results = {}
+
+    for match in json_starts:
+        data, _ = decoder.raw_decode(text, match.start())
+
+        for benchmark in data["results"]:
+            command = benchmark["command"]
+            measurements = benchmark["measurements"]
+
+            metrics = {}
+
+            for metric in ("time_wall_clock", "memory_peak_resident"):
+                values = [
+                    measurement[metric]["value"]
+                    for measurement in measurements
+                    if metric in measurement
+                    and "value" in measurement[metric]
+                ]
+
+                metrics[f"{metric}_iqr"] = (
+                    calculate_iqr(values) if values else ""
+                )
+
+            results[command] = metrics
+
+    if not results:
+        raise ValueError("No appended Hyperfine JSON objects found")
 
     return results
 
@@ -141,6 +207,23 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     results = parse_file(args.input)
+
+    iqr_results = parse_json_measurements(args.input)
+
+    for records in results.values():
+        for record in records:
+            command = next(
+                (
+                    command
+                    for command in iqr_results
+                    if command.rstrip("/").split("/")[-1]
+                    == record["executable"]
+                ),
+                None,
+            )
+
+            if command is not None:
+                record.update(iqr_results[command])
 
     for section, records in results.items():
         output_path = output_dir / f"{section}.csv"

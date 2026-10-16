@@ -18,8 +18,12 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 
 CONFIG = ["num_threads", "num_tasks", "vec_size"]
-TIME = ["time_wall_clock_median", "time_wall_clock_min",
-        "time_wall_clock_max"]
+TIME = [
+    "time_wall_clock_median",
+    "time_wall_clock_iqr",
+    "time_wall_clock_min",
+    "time_wall_clock_max",
+]
 
 
 def load_csv(path):
@@ -27,33 +31,15 @@ def load_csv(path):
         rows = list(csv.DictReader(f))
 
     for row in rows:
-        for column in CONFIG + TIME:
+        for column in CONFIG:
             row[column] = float(row[column])
+        for column in TIME:
+            row[column] = float(row[column]) if row[column] else 0.0
     return rows
 
 
 def fmt(value):
     return str(int(value)) if value.is_integer() else f"{value:g}"
-
-
-def annotate_point(ax, x, row):
-    """Label a point with median and observed min–max, in milliseconds."""
-    median = row["time_wall_clock_median"] * 1000
-    minimum = row["time_wall_clock_min"] * 1000
-    maximum = row["time_wall_clock_max"] * 1000
-
-    label = f"{median:.2f} [{minimum:.2f}–{maximum:.2f}]"
-
-    ax.annotate(
-        label,
-        (x, median),
-        xytext=(5, 5),
-        textcoords="offset points",
-        fontsize=7,
-        rotation=0,
-        ha="left",
-        va="bottom",
-    )
 
 
 def plot_factor(rows, factor, fixed, output, title):
@@ -81,17 +67,24 @@ def plot_factor(rows, factor, fixed, output, title):
                             j - (len(matching) - 1) / 2
                         ) * 0.08
 
-                        median = row[TIME[0]] * 1000
-                        low = (row[TIME[0]] - row[TIME[1]]) * 1000
-                        high = (row[TIME[2]] - row[TIME[0]]) * 1000
+                        median = row["time_wall_clock_median"] * 1000
+                        iqr_half = row["time_wall_clock_iqr"] * 1000 / 2
+                        minimum = row["time_wall_clock_min"] * 1000
+                        maximum = row["time_wall_clock_max"] * 1000
 
+                        # Full min–max range.
                         ax.errorbar(
                             x, median,
-                            yerr=[[max(0, low)], [max(0, high)]],
-                            fmt="o", linestyle="none", capsize=4,
+                            yerr=[[median - minimum], [maximum - median]],
+                            fmt="none", capsize=4, elinewidth=1,
                         )
 
-                        annotate_point(ax, x, row)
+                        # IQR, approximated symmetrically around the median.
+                        ax.errorbar(
+                            x, median,
+                            yerr=[[iqr_half], [iqr_half]],
+                            fmt="o", capsize=3, elinewidth=2,
+                        )
 
                 ax.set_xticks(range(len(names)), names, rotation=30,
                               ha="right")
@@ -116,25 +109,33 @@ def plot_factor(rows, factor, fixed, output, title):
 
                     xs, ys, lows, highs = [], [], [], []
 
-                    for row in matching:
-                        median = row[TIME[0]] * 1000
-                        xs.append(positions[row[factor]] + offsets[name])
-                        ys.append(median)
-                        lows.append(max(
-                            0, (row[TIME[0]] - row[TIME[1]]) * 1000
-                        ))
-                        highs.append(max(
-                            0, (row[TIME[2]] - row[TIME[0]]) * 1000
-                        ))
+                    xs, ys, lows, highs = [], [], [], []
+                    iqr_halves = []
 
+                    for row in matching:
+                        x = positions[row[factor]] + offsets[name]
+                        median = row["time_wall_clock_median"] * 1000
+                        minimum = row["time_wall_clock_min"] * 1000
+                        maximum = row["time_wall_clock_max"] * 1000
+
+                        xs.append(x)
+                        ys.append(median)
+                        lows.append(median - minimum)
+                        highs.append(maximum - median)
+                        iqr_halves.append(row["time_wall_clock_iqr"] * 1000 / 2)
+
+                    # Full min–max range.
                     ax.errorbar(
                         xs, ys, yerr=[lows, highs],
+                        fmt="none", capsize=4, elinewidth=1,
+                    )
+
+                    # IQR, approximated symmetrically around the median.
+                    ax.errorbar(
+                        xs, ys, yerr=[iqr_halves, iqr_halves],
                         fmt="o", linestyle="none", capsize=3,
                         markersize=5, label=name,
                     )
-
-                    for x, row in zip(xs, matching):
-                        annotate_point(ax, x, row)
 
                 ax.set_xticks(
                     range(len(values)), [fmt(v) for v in values]
@@ -152,8 +153,10 @@ def plot_factor(rows, factor, fixed, output, title):
                 f"{col}={fmt(val)}" for col, val in zip(fixed, key)
             )
             ax.set_title(f"{title}\nFixed configuration: {config}")
-            ax.set_ylabel("Median wall-clock time (ms)")
-            ax.grid(axis="y", alpha=0.3)
+            ax.set_ylabel("Median wall-clock time (ms), with IQR and min–max error bars")
+            ax.minorticks_on()
+            ax.grid(axis="y", which="major", alpha=0.4, linewidth=0.8)
+            ax.grid(axis="y", which="minor", alpha=0.2, linewidth=0.4)
             fig.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
