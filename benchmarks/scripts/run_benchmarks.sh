@@ -56,7 +56,6 @@ for tasks in "${num_tasks[@]}"; do
 			if [ -f "$FILE" ]; then
 				echo "skipping: "$FILE" (already exists)"
 			else
-				rm -f "$TMP"
 				touch "$TMP"
 				printf "\nNUM_THREADS: %d NUM_TASKS: %d VEC_SIZE: %d\n" "$threads" "$tasks" "$vec" >> "$TMP"
 
@@ -91,7 +90,7 @@ for tasks in "${num_tasks[@]}"; do
 				cat /tmp/tmp.json >> "$TMP"
 
 				echo "BENCHMARKS COMPLETE" >> "$TMP"
-				cat "$TMP" > "$FILE"
+				mv "$TMP" "$FILE"
 			fi
 		done
 	done
