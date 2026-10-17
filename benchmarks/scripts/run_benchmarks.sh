@@ -28,12 +28,12 @@ vec_sizes=(
 	992
 	10016
 	100000
-	#1000000
-	#10000000
-	#25000000
-	#50000000
-	#100000000
-	#200000000
+	1000000
+	10000000
+	25000000
+	50000000
+	100000000
+	200000000
 )
 
 # Likely the least important for these specific benchmarks - keeping it at 64
