@@ -17,6 +17,20 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 POINTS = 180
 
+EXECUTABLES = [
+    "vector-add-single-threaded",
+    "vector-add-mutex",
+    "vector-add-vyukov-idle",
+    "vector-add-vyukov-spin",
+    "vector-add-work-stealing",
+    "vector-add-manual",
+]
+
+COLOURS = dict(zip(
+    EXECUTABLES,
+    plt.rcParams["axes.prop_cycle"].by_key()["color"],
+))
+
 
 def load_json(path):
     with path.open(encoding="utf-8") as f:
@@ -156,6 +170,7 @@ def plot_factor(rows, factor, fixed, output, title):
                         times,
                         linewidth=1.2,
                         label=row["executable"],
+                        color=COLOURS[row["executable"]]
                     )
 
             ax.set_xticks(

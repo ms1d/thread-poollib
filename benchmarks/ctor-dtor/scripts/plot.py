@@ -19,6 +19,19 @@ CONFIG = ["num_threads", "num_tasks"]
 POINTS = 180
 
 
+EXECUTABLES = [
+    "ctor-dtor-mutex",
+    "ctor-dtor-vyukov-idle",
+    "ctor-dtor-vyukov-spin",
+    "ctor-dtor-work-stealing",
+]
+
+COLOURS = dict(zip(
+    EXECUTABLES,
+    plt.rcParams["axes.prop_cycle"].by_key()["color"],
+))
+
+
 def load_json(path):
     with path.open(encoding="utf-8") as f:
         data = json.load(f)
@@ -179,7 +192,7 @@ def plot_factor(rows, factor, fixed, output, title):
 
                     if len(times):
                         ax.plot(x + density * step * 0.45, times,
-                                linewidth=1.2, label=name)
+                                linewidth=1.2, label=name, color=COLOURS[row["executable"]])
 
             config = ", ".join(
                 f"{col}={fmt(val)}" for col, val in zip(fixed, key)

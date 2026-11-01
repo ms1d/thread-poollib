@@ -71,13 +71,12 @@ num_tasks=(
 
 
 
-mkdir -p "$data_path" "$results_path"
-
 if [[ "$delete" == true ]]; then
-    rm -f "$data_path"/dump.*.txt
-    echo "Deleted existing benchmark dumps."
+    rm -rf "$data_path"
+	echo "Deleted existing temp data at data path ($data_path)"
 fi
 
+mkdir -p "$data_path" "$results_path"
 
 for tasks in "${num_tasks[@]}"; do
 	for vec in "${vec_sizes[@]}"; do
@@ -122,6 +121,4 @@ echo "BENCHMARKS COMPLETE"
 # Generate artifacts
 
 python3 "$scripts_path/parse.py" -o "$data_path" "$data_path" &&
-    python3 "$scripts_path/plot.py" "$data_path/benchmarks.json" -o "$results_path" &&
-    rm -r "$data_path"
-
+    python3 "$scripts_path/plot.py" "$data_path/benchmarks.json" -o "$results_path"
