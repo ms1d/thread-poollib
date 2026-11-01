@@ -7,3 +7,5 @@ dump.txt
 dump.*.txt
 .ropeproject
 tmp.txt
+results
+data
