@@ -61,7 +61,7 @@ num_tasks=(
 
 
 if [[ "$delete" == true ]]; then
-    rm -f "$data_path"
+    rm -rf "$data_path"
 	echo "Deleted existing temp data at data path ($data_path)"
 fi
 
