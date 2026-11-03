@@ -9,7 +9,6 @@ int main() {
 		 &vec3 = ptrs.vec3;
 
 	if (!ptrs.alloc_vecs()) exit(1);
-
 	ptrs.init_vecs();
 
 	calculate(vec1, vec2, vec3, VEC_SIZE);

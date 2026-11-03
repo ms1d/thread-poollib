@@ -7,6 +7,9 @@ int main() {
 		 &vec2 = ptrs.vec2,
 		 &vec3 = ptrs.vec3;
 
+	if (!ptrs.alloc_vecs()) exit(1);
+	ptrs.alloc_vecs();
+
 	std::thread pool[NUM_THREADS];
 	for (uint32_t i = 0; i < NUM_THREADS; i++) {
 		pool[i] = std::thread([&, i] {
