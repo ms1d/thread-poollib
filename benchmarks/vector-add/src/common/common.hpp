@@ -19,6 +19,13 @@
 
 static_assert(VEC_SIZE % NUM_THREADS == 0);
 
+static_assert(VEC_SIZE < std::numeric_limits<uint32_t>::max());
+static_assert(VEC_SIZE > std::numeric_limits<uint32_t>::min());
+static_assert(NUM_TASKS < std::numeric_limits<uint32_t>::max());
+static_assert(NUM_TASKS < std::numeric_limits<uint32_t>::max());
+static_assert(NUM_THREADS > std::numeric_limits<uint32_t>::min());
+static_assert(NUM_THREADS > std::numeric_limits<uint32_t>::min());
+
 void calculate(const uint32_t *vec1, const uint32_t *vec2, uint32_t *vec3, const uint32_t len);
 
 struct vec_ptrs {
