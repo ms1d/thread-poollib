@@ -16,7 +16,7 @@ benchmarks=(
 cmds=()
 
 for bench in "${benchmarks[@]}"; do
-    cmds+=("build/benchmarks/$benchname/$bench/$benchname-$bench")
+    cmds+=("build/benchmarks/$benchname/src/$bench/$benchname-$bench")
 done
 
 runs=10000
