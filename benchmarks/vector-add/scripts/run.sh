@@ -102,7 +102,7 @@ for tasks in "${num_tasks[@]}"; do
 					-DNUM_TASKS=$tasks \
 					-DVEC_SIZE=$vec > /dev/null || exit 1
 
-				cmake --build build > /dev/null || exit 2
+				cmake --build build --parallel > /dev/null || exit 2
 
 				rm -f /tmp/tmp.json
 
