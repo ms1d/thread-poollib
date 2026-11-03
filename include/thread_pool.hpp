@@ -8,6 +8,13 @@
 #include <tuple>
 #include <cassert>
 
+#ifdef __linux
+#include <pthread.h>
+#include <sched.h>
+#elif defined(_WIN32)
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 // Template struct representing a task.
 template<auto func>
@@ -31,7 +38,7 @@ struct tp_task<func> {
 	}
 
 	tp_task() = default;
-	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
+	tp_task(arg_Ts... _args) requires(sizeof...(arg_Ts) > 0) : args(std::make_tuple(_args...)) { }
 };
 
 
@@ -51,7 +58,7 @@ struct tp_task<func> {
 	}
 	
 	tp_task() = default;
-	tp_task(arg_Ts... _args) : args(std::make_tuple(_args...)) { }
+	tp_task(arg_Ts... _args) requires(sizeof...(arg_Ts) > 0) : args(std::make_tuple(_args...)) { }
 };
 
 
@@ -74,7 +81,7 @@ bool execute(tp_task<func> *task) {
 // MPMC thread pool with constexpr sizes for worker and task buffers.
 // Offers 4 different pool types (see pool_type enum) all with identical APIs.
 // Default pool type is mutex.
-template<auto func, uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex>
+template<auto func, uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex, bool pin_threads = false>
 class thread_pool;
 
 // (pool_type::mutex) Mutex-protected buffer implementation of thread pool.
@@ -84,17 +91,29 @@ class thread_pool;
 // (pool_type::vyukov*) Lock free implementation of thread pool based on Vyukov's sequence numbers
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type>
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type, bool pin_threads>
 requires(type == pool_type::vyukov_spin || type == pool_type::vyukov_idle || type == pool_type::mutex)
-class thread_pool<func, worker_buffer_len, task_buffer_len, type> {
+class thread_pool<func, worker_buffer_len, task_buffer_len, type, pin_threads> {
 
 
 
 public:
     // Constructor initializes the thread pool with worker threads.
     thread_pool() {
-		for (uint32_t i = 0; i < worker_buffer_len; i++)
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
 			worker_buffer[i] = std::thread([this] () { worker_loop(); });
+			if constexpr (pin_threads) {
+#ifdef __linux__
+				cpu_set_t cpuset;
+				CPU_ZERO(&cpuset);
+				CPU_SET(i % std::thread::hardware_concurrency(), &cpuset);
+				pthread_setaffinity_np(worker_buffer[i].native_handle(), sizeof(cpu_set_t), &cpuset);
+#elif defined(_WIN32)
+				if (core >= sizeof(DWORD_PTR) * 8) return false;
+				SetThreadAffinityMask(worker_buffer[i].native_handle(), 1 << i % std::thread::hardware_concurrency());
+#endif
+			}
+		}
     }
 
     // Destructor stops all worker threads and joins them.
@@ -166,16 +185,28 @@ static inline uint64_t wyrand() {
 }
 
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len>
-class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing> {
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, bool pin_threads>
+class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing, pin_threads> {
 
 
 public:
 
-	thread_pool() {
-		for (uint32_t i = 0; i < worker_buffer_len; i++)
+    thread_pool() {
+		for (uint32_t i = 0; i < worker_buffer_len; i++) {
 			worker_buffer[i] = std::thread([this, i] () { worker_loop(i); });
-	}
+			if constexpr (pin_threads) {
+#ifdef __linux__
+				cpu_set_t cpuset;
+				CPU_ZERO(&cpuset);
+				CPU_SET(i % std::thread::hardware_concurrency(), &cpuset);
+				pthread_setaffinity_np(worker_buffer[i].native_handle(), sizeof(cpu_set_t), &cpuset);
+#elif defined(_WIN32)
+				if (core >= sizeof(DWORD_PTR) * 8) return false;
+				SetThreadAffinityMask(worker_buffer[i].native_handle(), 1 << i % std::thread::hardware_concurrency());
+#endif
+			}
+		}
+    }
 
 	thread_pool(uint32_t _max_steals) : max_steals(_max_steals) {
 		for (uint32_t i = 0; i < worker_buffer_len; i++)
