@@ -12,5 +12,5 @@ void func(int) { }
 
 int main() {
 	thread_pool<func, NUM_THREADS, NUM_TASKS, pool_type::vyukov_spin> pool{};
+	return 0;
 }
-

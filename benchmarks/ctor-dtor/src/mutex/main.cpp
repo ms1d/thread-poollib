@@ -12,4 +12,5 @@ void func(int) { }
 
 int main() {
 	thread_pool<func, NUM_THREADS, NUM_TASKS, pool_type::mutex> pool{};
+	return 0;
 }
