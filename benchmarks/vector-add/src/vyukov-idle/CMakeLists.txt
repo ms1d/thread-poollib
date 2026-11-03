@@ -5,11 +5,5 @@ target_link_libraries(vector-add-vyukov-idle PRIVATE
 	vector-add-common
 )
 target_compile_options(vector-add-vyukov-idle PRIVATE
-	-O3 -g
-)
-
-target_compile_definitions(vector-add-vyukov-idle PRIVATE
-	NUM_TASKS=${NUM_TASKS}
-	NUM_THREADS=${NUM_THREADS}
-	VEC_SIZE=${VEC_SIZE}
+	-O3
 )

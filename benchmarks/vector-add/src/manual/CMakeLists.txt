@@ -6,7 +6,7 @@ target_link_libraries(vector-add-manual PRIVATE
 )
 
 target_compile_options(vector-add-manual PRIVATE
-	-O3 -g
+	-O3
 )
 
 target_compile_definitions(vector-add-manual PRIVATE

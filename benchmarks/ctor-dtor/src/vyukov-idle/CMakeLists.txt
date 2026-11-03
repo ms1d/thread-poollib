@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 add_executable(ctor-dtor-vyukov-idle main.cpp)
 target_link_libraries(ctor-dtor-vyukov-idle PRIVATE thread-poollib)
 target_compile_options(ctor-dtor-vyukov-idle PRIVATE
-	-O3 -g
+	-O3
 )
 
 target_compile_definitions(ctor-dtor-vyukov-idle PRIVATE

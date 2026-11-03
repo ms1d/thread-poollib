@@ -6,11 +6,5 @@ target_link_libraries(vector-add-mutex PRIVATE
 )
 
 target_compile_options(vector-add-mutex PRIVATE
-	-O3 -g
-)
-
-target_compile_definitions(vector-add-mutex PRIVATE
-	NUM_TASKS=${NUM_TASKS}
-	NUM_THREADS=${NUM_THREADS}
-	VEC_SIZE=${VEC_SIZE}
+	-O3
 )
