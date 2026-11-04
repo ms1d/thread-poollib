@@ -195,7 +195,10 @@ def plot_factor(rows, factor, fixed, output, title):
             )
             ax.set_title(f"{title}\nFixed configuration: {config}")
             ax.set_ylabel("Wall-clock time (ms)")
-            ax.grid(axis="y", alpha=0.3)
+            ax.set_yscale("log")
+            ax.yaxis.minorticks_on()
+            ax.grid(axis="y", which="major", alpha=0.5)
+            ax.grid(axis="y", which="minor", alpha=0.3)
             ax.set_axisbelow(True)
 
             if factor != "executable":
