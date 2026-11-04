@@ -4,7 +4,3 @@ add_executable(box-muller-mutex main.cpp)
 target_link_libraries(box-muller-mutex PRIVATE
 	box-muller-common
 )
-
-target_compile_options(box-muller-mutex PRIVATE
-	-O3
-)

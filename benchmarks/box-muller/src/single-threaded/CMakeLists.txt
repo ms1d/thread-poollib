@@ -5,10 +5,6 @@ target_link_libraries(box-muller-single-threaded PRIVATE
 	box-muller-common
 )
 
-target_compile_options(box-muller-single-threaded PRIVATE
-	-O3
-)
-
 target_compile_definitions(box-muller-single-threaded PRIVATE
     NUM_TASKS=${NUM_TASKS}
     NUM_THREADS=${NUM_THREADS}

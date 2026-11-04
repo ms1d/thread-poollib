@@ -12,8 +12,8 @@ target_include_directories(box-muller-common PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_compile_options(box-muller-common PRIVATE
-    -O3
+target_compile_options(box-muller-common PUBLIC
+    -O3 -g
 )
 
 target_compile_definitions(box-muller-common PRIVATE

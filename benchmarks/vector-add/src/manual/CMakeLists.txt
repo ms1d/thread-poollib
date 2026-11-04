@@ -5,10 +5,6 @@ target_link_libraries(vector-add-manual PRIVATE
 	vector-add-common
 )
 
-target_compile_options(vector-add-manual PRIVATE
-	-O3
-)
-
 target_compile_definitions(vector-add-manual PRIVATE
 	NUM_TASKS=${NUM_TASKS}
 	NUM_THREADS=${NUM_THREADS}

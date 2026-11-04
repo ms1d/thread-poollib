@@ -4,7 +4,3 @@ add_executable(vector-add-mutex main.cpp)
 target_link_libraries(vector-add-mutex PRIVATE
 	vector-add-common
 )
-
-target_compile_options(vector-add-mutex PRIVATE
-	-O3
-)

@@ -4,7 +4,3 @@ add_executable(vector-add-vyukov-spin main.cpp)
 target_link_libraries(vector-add-vyukov-spin PRIVATE
 	vector-add-common
 )
-
-target_compile_options(vector-add-vyukov-spin PRIVATE
-	-O3
-)
