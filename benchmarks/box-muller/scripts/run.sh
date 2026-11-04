@@ -50,28 +50,23 @@ num_threads=(
 vec_sizes=(
 	992
 	10016
-	20000
-	40000
-	80000
+
 	100000
-	200000
 	400000
-	800000
+
 	1000000
-	2000000
 	4000000
 	8000000
-	10000000
 )
 
-# Likely the least important for these specific benchmarks - keeping it at 16 and 64 for now
+# Likely the least important for these specific benchmarks - keeping it at 4 and 4096 for now
 num_tasks=(
-	#4
-	16
-	64
+	4
+	#16
+	#64
 	#256
 	#1024
-	#4096
+	4096
 )
 
 
