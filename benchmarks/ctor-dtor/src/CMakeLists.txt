@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
+add_subdirectory(manual)
 add_subdirectory(mutex)
 add_subdirectory(vyukov-idle)
 add_subdirectory(vyukov-spin)

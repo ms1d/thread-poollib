@@ -7,6 +7,7 @@ set -euo pipefail
 benchname="ctor-dtor"
 
 benchmarks=(
+	manual
     mutex
     vyukov-idle
     vyukov-spin

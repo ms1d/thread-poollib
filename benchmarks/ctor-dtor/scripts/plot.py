@@ -20,6 +20,7 @@ POINTS = 180
 
 
 EXECUTABLES = [
+    "ctor-dtor-manual",
     "ctor-dtor-mutex",
     "ctor-dtor-vyukov-idle",
     "ctor-dtor-vyukov-spin",

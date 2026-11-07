@@ -8,7 +8,7 @@
 #define NUM_THREADS 32
 #endif
 
-void func(int) { }
+void func(void) { }
 
 int main() {
 	thread_pool<func, NUM_THREADS, NUM_TASKS, pool_type::work_stealing> pool{};
