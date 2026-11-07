@@ -10,13 +10,16 @@ int main(void) {
 		 &vec3 = ptrs.vec3;
 
 	if (!ptrs.alloc_vecs()) exit(1);
-	ptrs.init_vecs();
 
-	calculate(vec1, vec2, vec3, VEC_SIZE);
+	for (uint32_t i = 0; i < INNER_LOOPS; i++) {
+		ptrs.init_vecs();
 
-	float sum = 0;
-	for (uint32_t i = 0; i < VEC_SIZE; i++) sum += vec3[i];
-    printf("%f\n", sum);
+		calculate(vec1, vec2, vec3, VEC_SIZE);
+
+		float sum = 0;
+		for (uint32_t i = 0; i < VEC_SIZE; i++) sum += vec3[i];
+		printf("%f\n", sum);
+	}
 
 	ptrs.free_vecs();
 

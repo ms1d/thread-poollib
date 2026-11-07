@@ -13,7 +13,8 @@ from pathlib import Path
 CONFIG_RE = re.compile(
     r"NUM_THREADS:\s*(\d+)\s+"
     r"NUM_TASKS:\s*(\d+)\s+"
-    r"VEC_SIZE:\s*(\d+)"
+    r"VEC_SIZE:\s*(\d+)\s+"
+    r"INNER_LOOPS:\s*(\d+)"
 )
 
 
@@ -34,7 +35,7 @@ def parse_file(path):
 
         if match:
             config = dict(zip(
-                ("num_threads", "num_tasks", "vec_size"),
+                ("num_threads", "num_tasks", "vec_size", "inner_loops"),
                 map(int, match.groups()),
             ))
 
@@ -81,7 +82,7 @@ def main():
     if args.input.is_file():
         files = [args.input]
     elif args.input.is_dir():
-        files = sorted(args.input.glob("dump.*.*.*.txt"))
+        files = sorted(args.input.glob("dump.*.*.*.*.txt"))
     else:
         parser.error(f"Input does not exist: {args.input}")
 

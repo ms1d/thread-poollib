@@ -110,7 +110,7 @@ def kde(samples):
     return times, density
 
 
-def plot_factor(rows, factor, fixed, output, title):
+def plot_factor(rows, factor, fixed, output, title, normalise):
     groups = defaultdict(list)
     for row in rows:
         groups[tuple(row[c] for c in fixed)].append(row)
@@ -119,6 +119,7 @@ def plot_factor(rows, factor, fixed, output, title):
         "vec_size": "Vector size (elements)",
         "num_threads": "Number of threads",
         "num_tasks": "Number of tasks",
+        "inner_loops": "Inner loops run per build"
     }
 
     with PdfPages(output) as pdf:
@@ -163,7 +164,10 @@ def plot_factor(rows, factor, fixed, output, title):
                 if factor != "executable":
                     x += offsets[row["executable"]]
 
-                times, density = kde(row["samples"])
+                samples = row["samples"]
+                if normalise:
+                    samples = samples / row[factor]
+                times, density = kde(samples)
                 if len(times):
                     ax.plot(
                         x + density * step * 0.45,
@@ -194,7 +198,19 @@ def plot_factor(rows, factor, fixed, output, title):
                 f"{col}={fmt(val)}" for col, val in zip(fixed, key)
             )
             ax.set_title(f"{title}\nFixed configuration: {config}")
-            ax.set_ylabel("Wall-clock time (ms)")
+
+            normalised_labels = {
+                "vec_size": "Wall-clock time (ms / element)",
+                "num_threads": "Wall-clock time (ms / thread)",
+                "num_tasks": "Wall-clock time (ms / task)",
+                "inner_loops": "Wall-clock time (ms / inner loop)",
+            }
+
+            ax.set_ylabel(
+                normalised_labels[factor] if normalise
+                else "Wall-clock time (ms)"
+            )
+
             ax.set_yscale("log")
             ax.yaxis.minorticks_on()
             ax.grid(axis="y", which="major", alpha=0.5)
@@ -230,18 +246,20 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     plots = [
-        ("vec_size", ["num_threads", "num_tasks"],
-         "A - Impact of vector size", "A_vec_size.pdf"),
-        ("num_threads", ["num_tasks", "vec_size"],
-         "B - Impact of thread count", "B_threads.pdf"),
-        ("executable", ["num_threads", "num_tasks", "vec_size"],
-         "C - Impact of executable type", "C_executable.pdf"),
-        ("num_tasks", ["num_threads", "vec_size"],
-         "D - Impact of task count", "D_tasks.pdf"),
+        ("vec_size", ["num_threads", "num_tasks", "inner_loops"],
+         "A - Impact of vector size", "A_vec_size.pdf", False),
+        ("num_threads", ["num_tasks", "vec_size", "inner_loops"],
+         "B - Impact of thread count", "B_threads.pdf", False),
+        ("executable", ["num_threads", "num_tasks", "vec_size", "inner_loops"],
+         "C - Impact of executable type", "C_executable.pdf", False),
+        ("num_tasks", ["num_threads", "vec_size", "inner_loops"],
+         "D - Impact of task count", "D_tasks.pdf", False),
+        ("inner_loops", ["num_threads", "num_tasks", "vec_size"],
+         "E - Impact of inner loops", "E_inner_loops.pdf", True)
     ]
 
-    for factor, fixed, title, filename in plots:
-        plot_factor(rows, factor, fixed, out / filename, title)
+    for factor, fixed, title, filename, normalise in plots:
+        plot_factor(rows, factor, fixed, out / filename, title, normalise)
 
 
 if __name__ == "__main__":

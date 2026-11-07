@@ -15,6 +15,10 @@
 #define VEC_SIZE 10'000'000
 #endif
 
+#ifndef INNER_LOOPS
+#define INNER_LOOPS 100
+#endif
+
 #define ELES_PER_THREAD (VEC_SIZE / NUM_THREADS)
 
 static_assert(VEC_SIZE % NUM_THREADS == 0);

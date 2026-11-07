@@ -50,13 +50,12 @@ num_threads=(
 vec_sizes=(
 	992
 	10016
+	
 	100000
 	1000000
+
 	10000000
 	25000000
-	50000000
-	100000000
-	200000000
 )
 
 # Likely the least important for these specific benchmarks - keeping it at 4 and 4096 for now
@@ -67,6 +66,11 @@ num_tasks=(
 	#256
 	#1024
 	4096
+)
+
+inner_loops=(
+	1
+	50
 )
 
 
@@ -81,37 +85,39 @@ mkdir -p "$data_path" "$results_path"
 for tasks in "${num_tasks[@]}"; do
 	for vec in "${vec_sizes[@]}"; do
 		for threads in "${num_threads[@]}"; do
+			for loop in "${inner_loops[@]}"; do
+				FILE="$data_path/dump.$tasks.$vec.$threads.$loop.txt"
+				TMP="$data_path/tmp.txt"
 
-			FILE="$data_path/dump.$tasks.$vec.$threads.txt"
-			TMP="$data_path/tmp.txt"
+				if [ -f "$FILE" ]; then
+					echo "skipping: "$FILE" (already exists)"
+				else
+					: > "$TMP"
+					printf "\nNUM_THREADS: %d NUM_TASKS: %d VEC_SIZE: %d INNER_LOOPS: %d\n" "$threads" "$tasks" "$vec" "$loop" >> "$TMP"
 
-			if [ -f "$FILE" ]; then
-				echo "skipping: "$FILE" (already exists)"
-			else
-				: > "$TMP"
-				printf "\nNUM_THREADS: %d NUM_TASKS: %d VEC_SIZE: %d\n" "$threads" "$tasks" "$vec" >> "$TMP"
+					printf "Compiling (num threads = %d, num tasks = %d, vec_size = %d inner_loops = %d)...\n" "$threads" "$tasks" "$vec" "$loop"
+					cmake \
+						-S . \
+						-B build \
+						-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+						-DBUILD_BENCHMARKS=ON \
+						-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+						-DNUM_THREADS=$threads \
+						-DNUM_TASKS=$tasks \
+						-DVEC_SIZE=$vec \
+						-DINNER_LOOPS=$loop > /dev/null || exit 1
 
-				printf "Compiling (num threads = %d, num tasks = %d, vec_size = %d)...\n" "$threads" "$tasks" "$vec"
-				cmake \
-					-S . \
-					-B build \
-					-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-					-DBUILD_BENCHMARKS=ON \
-					-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-					-DNUM_THREADS=$threads \
-					-DNUM_TASKS=$tasks \
-					-DVEC_SIZE=$vec > /dev/null || exit 1
+					cmake --build build --parallel > /dev/null || exit 2
 
-				cmake --build build --parallel > /dev/null || exit 2
+					rm -f /tmp/tmp.json
 
-				rm -f /tmp/tmp.json
+					"$scripts_path/launch.sh" $(($runs / $loop))
+					cat /tmp/tmp.json >> "$TMP"
 
-				"$scripts_path/launch.sh" $runs
-				cat /tmp/tmp.json >> "$TMP"
-
-				echo "BENCHMARKS COMPLETE" >> "$TMP"
-				mv "$TMP" "$FILE"
-			fi
+					echo "BENCHMARKS COMPLETE" >> "$TMP"
+					mv "$TMP" "$FILE"
+				fi
+			done
 		done
 	done
 done

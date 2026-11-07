@@ -16,6 +16,10 @@
 #define VEC_SIZE 10'000'000
 #endif
 
+#ifndef INNER_LOOPS
+#define INNER_LOOPS 100
+#endif
+
 #define ELES_PER_THREAD (VEC_SIZE / NUM_THREADS)
 
 static_assert(VEC_SIZE % NUM_THREADS == 0);
@@ -42,4 +46,3 @@ struct vec_ptrs {
 // Intended for thread pool benchmarks
 template<pool_type type>
 void execute_main_body();
-

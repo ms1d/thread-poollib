@@ -37,8 +37,10 @@ bool vec_ptrs::alloc_vecs() {
 
 void vec_ptrs::init_vecs() {
 	for (uint32_t i = 0; i < VEC_SIZE; i++) {
-		vec1[i] = i * 123456789u + 12345u;
-        vec2[i] = i * 987654321u + 54321u;
+		// time is used as a source of pseudorandomness
+		auto t = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+		vec1[i] = i * 123456789u + 12345u * t;
+        vec2[i] = i * 987654321u + 54321u * t;
 	}
 }
 
@@ -56,32 +58,34 @@ void execute_main_body() {
 		 &vec3 = ptrs.vec3;
 
 	if (!ptrs.alloc_vecs()) exit(1);
-	ptrs.init_vecs();
-
 	thread_pool<calculate, NUM_THREADS, NUM_TASKS, type> pool{};
-
 	tp_task<calculate> *tasks[NUM_THREADS];
-	for (uint32_t i = 0; i < NUM_THREADS; i++) {
-		auto offset = i * ELES_PER_THREAD;
-		tasks[i] = new tp_task<calculate>(
-				vec1 + offset,
-				vec2 + offset,
-				vec3 + offset,
-				ELES_PER_THREAD);
+
+	for (uint32_t i = 0; i < INNER_LOOPS; i++) {
+		ptrs.init_vecs();
+
+		for (uint32_t i = 0; i < NUM_THREADS; i++) {
+			auto offset = i * ELES_PER_THREAD;
+			tasks[i] = new tp_task<calculate>(
+					vec1 + offset,
+					vec2 + offset,
+					vec3 + offset,
+					ELES_PER_THREAD);
+		}
+
+		for (uint32_t i = 0; i < NUM_THREADS; i++) {
+			pool.submit(tasks[i]);
+		}
+
+		for (uint32_t i = 0; i < NUM_THREADS; i++) {
+			tasks[i]->is_result_ready.wait(false);
+			delete tasks[i];
+		}
+
+		uint32_t sum = 0;
+		for (uint32_t i = 0; i < VEC_SIZE; i++) sum += vec3[i];
+		std::printf("%d\n", sum);
 	}
-
-	for (uint32_t i = 0; i < NUM_THREADS; i++) {
-		pool.submit(tasks[i]);
-	}
-
-	for (uint32_t i = 0; i < NUM_THREADS; i++) {
-		tasks[i]->is_result_ready.wait(false);
-        delete tasks[i];
-    }
-
-	uint32_t sum = 0;
-	for (uint32_t i = 0; i < VEC_SIZE; i++) sum += vec3[i];
-	std::printf("%d\n", sum);
 	
 	ptrs.free_vecs();
 }
