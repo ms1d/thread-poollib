@@ -13,11 +13,12 @@ target_include_directories(box-muller-common PUBLIC
 )
 
 target_compile_options(box-muller-common PUBLIC
-    -O3 -g
+    -O3 -g -march=native
 )
 
 target_compile_definitions(box-muller-common PRIVATE
     NUM_TASKS=${NUM_TASKS}
     NUM_THREADS=${NUM_THREADS}
 	VEC_SIZE=${VEC_SIZE}
+	INNER_LOOPS=${INNER_LOOPS}
 )

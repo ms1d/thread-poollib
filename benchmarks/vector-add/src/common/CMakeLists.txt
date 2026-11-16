@@ -13,11 +13,12 @@ target_include_directories(vector-add-common PUBLIC
 )
 
 target_compile_options(vector-add-common PUBLIC
-	-O3 -g
+    -O3 -g -march=native
 )
 
 target_compile_definitions(vector-add-common PRIVATE
 	NUM_TASKS=${NUM_TASKS}
 	NUM_THREADS=${NUM_THREADS}
 	VEC_SIZE=${VEC_SIZE}
+	INNER_LOOPS=${INNER_LOOPS}
 )
