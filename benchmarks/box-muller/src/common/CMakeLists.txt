@@ -16,7 +16,7 @@ target_compile_options(box-muller-common PUBLIC
     -O3 -g -march=native
 )
 
-target_compile_definitions(box-muller-common PRIVATE
+target_compile_definitions(box-muller-common PUBLIC
     NUM_TASKS=${NUM_TASKS}
     NUM_THREADS=${NUM_THREADS}
 	VEC_SIZE=${VEC_SIZE}
