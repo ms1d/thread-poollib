@@ -172,11 +172,11 @@ struct thread_info {
 
 	bool is_worker(void *curr_pool) { return deque_ptr != nullptr && pool_ptr == curr_pool; }
 };
-static thread_local thread_info curr_thread{};
+inline thread_local thread_info curr_thread{};
 
 // wyrand (64-bit)
-static std::atomic<uint32_t> seed_counter{0};
-static thread_local uint64_t state = 0x9e3779b97f4a7c15ULL ^ seed_counter.fetch_add(1);
+inline std::atomic<uint32_t> seed_counter{0};
+inline thread_local uint64_t state = 0x9e3779b97f4a7c15ULL ^ seed_counter.fetch_add(1);
 
 static inline uint64_t wyrand() {
     state += 0xa0761d6478bd642f;
