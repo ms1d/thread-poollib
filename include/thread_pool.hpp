@@ -172,6 +172,8 @@ struct thread_info {
 
 	bool is_worker(void *curr_pool) { return deque_ptr != nullptr && pool_ptr == curr_pool; }
 };
+// Stored statically since it fits in 1 cache line; anything more
+// would benefit from a static pointer that points to stack 
 inline thread_local thread_info curr_thread{};
 
 // wyrand (64-bit)
@@ -330,6 +332,7 @@ private:
 			// It forces top_local to be newer than bottom_local
 			// This prevents owners from optimistically decrementing
 			// bottom when they should instead be CASing top
+			// (i.e. a check-then-act race)
 			std::atomic_thread_fence(std::memory_order_seq_cst);
 
 			auto top_local = top.load(std::memory_order_relaxed);
@@ -375,6 +378,8 @@ private:
 	deque deques[worker_buffer_len];
 
 	mpmc<tp_task<func>, task_buffer_len, pool_type::vyukov_idle> induction_buffer;
+	// induction_epoch acts as a general notification counter and is necessary
+	// since tasks can be submitted to either the induction buffer or individual deques
 	std::atomic<uint32_t> induction_epoch{0}, exited{0};
 
 	std::thread worker_buffer[worker_buffer_len];
