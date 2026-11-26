@@ -81,7 +81,7 @@ bool execute(tp_task<func> *task) {
 // MPMC thread pool with constexpr sizes for worker and task buffers.
 // Offers 4 different pool types (see pool_type enum) all with identical APIs.
 // Default pool type is mutex.
-template<auto func, uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex, bool pin_threads = false>
+template<auto func, uint8_t worker_buffer_len, uint32_t task_buffer_len, pool_type pool_type = pool_type::mutex, bool pin_threads = false>
 class thread_pool;
 
 // (pool_type::mutex) Mutex-protected buffer implementation of thread pool.
@@ -91,7 +91,7 @@ class thread_pool;
 // (pool_type::vyukov*) Lock free implementation of thread pool based on Vyukov's sequence numbers
 //	- Each producer/consumer will increment tail/head pointers to claim slots from other threads of their "role" respectively
 //	- They then spin on the newly reserved resource to allow a new consumer/producer to finish writing/reading data from it
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, pool_type type, bool pin_threads>
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint8_t worker_buffer_len, uint32_t task_buffer_len, pool_type type, bool pin_threads>
 requires(type == pool_type::vyukov_spin || type == pool_type::vyukov_idle || type == pool_type::mutex)
 class thread_pool<func, worker_buffer_len, task_buffer_len, type, pin_threads> {
 
@@ -109,8 +109,11 @@ public:
 				CPU_SET(i % std::thread::hardware_concurrency(), &cpuset);
 				pthread_setaffinity_np(worker_buffer[i].native_handle(), sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32)
-				if (core >= sizeof(DWORD_PTR) * 8) return false;
-				SetThreadAffinityMask(worker_buffer[i].native_handle(), 1 << i % std::thread::hardware_concurrency());
+				const auto available_cores = std::thread::hardware_concurrency();
+				if (available_cores == 0) continue;
+				const auto core = i % available_cores;
+				if (core >= sizeof(DWORD_PTR) * 8) continue;
+				SetThreadAffinityMask(worker_buffer[i].native_handle(), DWORD_PTR{1} << core);
 #endif
 			}
 		}
@@ -155,7 +158,7 @@ public:
 
 private:
     std::thread worker_buffer[worker_buffer_len];
-	std::atomic<uint32_t> exited{0};
+	std::atomic<uint8_t> exited{0};
 	mpmc<tp_task<func>, task_buffer_len, type> task_buffer;
 
 
@@ -187,7 +190,7 @@ static inline uint64_t wyrand() {
 }
 
 // Chase-Lev style work stealing thread pool implementation. Each worker has its own deque
-template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint32_t worker_buffer_len, uint32_t task_buffer_len, bool pin_threads>
+template<typename R, typename... arg_Ts, R (*func)(arg_Ts...), uint8_t worker_buffer_len, uint32_t task_buffer_len, bool pin_threads>
 class thread_pool<func, worker_buffer_len, task_buffer_len, pool_type::work_stealing, pin_threads> {
 
 
@@ -203,8 +206,11 @@ public:
 				CPU_SET(i % std::thread::hardware_concurrency(), &cpuset);
 				pthread_setaffinity_np(worker_buffer[i].native_handle(), sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32)
-				if (core >= sizeof(DWORD_PTR) * 8) return false;
-				SetThreadAffinityMask(worker_buffer[i].native_handle(), 1 << i % std::thread::hardware_concurrency());
+				const auto available_cores = std::thread::hardware_concurrency();
+				if (available_cores == 0) continue;
+				const auto core = i % available_cores;
+				if (core >= sizeof(DWORD_PTR) * 8) continue;
+				SetThreadAffinityMask(worker_buffer[i].native_handle(), DWORD_PTR{1} << core);
 #endif
 			}
 		}
@@ -380,13 +386,14 @@ private:
 	mpmc<tp_task<func>, task_buffer_len, pool_type::vyukov_idle> induction_buffer;
 	// induction_epoch acts as a general notification counter and is necessary
 	// since tasks can be submitted to either the induction buffer or individual deques
-	std::atomic<uint32_t> induction_epoch{0}, exited{0};
+	std::atomic<uint32_t> induction_epoch{0};
+	std::atomic<uint8_t> exited{0};
 
 	std::thread worker_buffer[worker_buffer_len];
 
 	const uint32_t max_steals = 2;
 
-	void worker_loop(uint32_t worker_index) {
+	void worker_loop(uint8_t worker_index) {
 		curr_thread.deque_ptr = deques + worker_index;
 		curr_thread.pool_ptr = this;
 
